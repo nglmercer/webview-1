@@ -1,4 +1,4 @@
-import { Application, ProgressBarState } from '../index.js'
+import { Application } from '../index.js'
 
 const width = 800;
 const height = 600;

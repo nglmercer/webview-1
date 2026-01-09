@@ -39,19 +39,21 @@ const webview = browserWindow.createWebview({
         function closeApp() {
           // This will trigger the ApplicationCloseRequested event
           // and clean up all resources including temp folders
-          window.close();
+          window.ipc.postMessage('close');
         }
         
         function reloadWebview() {
           // This will reload the webview
-          location.reload();
+          window.ipc.postMessage('reload');
         }
       </script>
     </body>
     </html>
   `,
 });
-
+webview.onIpcMessage((message) => {
+    console.log('Received message from webview:', message);
+});
 // Set up event handler for application events
 // You can use either onEvent() or bind() - they are equivalent
 app.bind((event) => {
@@ -89,4 +91,4 @@ app.bind((event) => {
 // }, 4000);
 
 // Run the application
-await app.run();
+app.run();

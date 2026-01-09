@@ -6,148 +6,98 @@ use tao::{
   window::{Fullscreen, ProgressBarState, Window, WindowBuilder},
 };
 
-use crate::webview::{JsWebview, Theme, WebviewOptions};
-
-// #[cfg(target_os = "windows")]
-// use tao::platform::windows::IconExtWindows;
-
-#[napi]
-pub enum FullscreenType {
-  /// Exclusive fullscreen.
-  Exclusive,
-  /// Borderless fullscreen.
-  Borderless,
-}
-
-#[napi(object)]
-pub struct Dimensions {
-  /// The width of the size.
-  pub width: u32,
-  /// The height of the size.
-  pub height: u32,
-}
-
-#[napi(object)]
-pub struct Position {
-  /// The x position.
-  pub x: i32,
-  /// The y position.
-  pub y: i32,
-}
-
-#[napi(object, js_name = "VideoMode")]
-pub struct JsVideoMode {
-  /// The size of the video mode.
-  pub size: Dimensions,
-  /// The bit depth of the video mode.
-  pub bit_depth: u16,
-  /// The refresh rate of the video mode.
-  pub refresh_rate: u16,
-}
-
-#[napi(object)]
-pub struct Monitor {
-  /// The name of the monitor.
-  pub name: Option<String>,
-  /// The scale factor of the monitor.
-  pub scale_factor: f64,
-  /// The size of the monitor.
-  pub size: Dimensions,
-  /// The position of the monitor.
-  pub position: Position,
-  /// The video modes of the monitor.
-  pub video_modes: Vec<JsVideoMode>,
-}
-
-#[napi(js_name = "ProgressBarState")]
-pub enum JsProgressBarState {
-  None,
-  Normal,
-  /// Treated as normal in linux and macos
-  Indeterminate,
-  /// Treated as normal in linux
-  Paused,
-  /// Treated as normal in linux
-  Error,
-}
-
-#[napi(object)]
-pub struct JsProgressBar {
-  /// The progress state.
-  pub state: Option<JsProgressBarState>,
-  /// The progress value.
-  pub progress: Option<u32>,
-}
-
-#[napi(object)]
-pub struct BrowserWindowOptions {
-  /// Whether the window is resizable. Default is `true`.
-  pub resizable: Option<bool>,
-  /// The window title.
-  pub title: Option<String>,
-  /// The width of the window.
-  pub width: Option<f64>,
-  /// The height of the window.
-  pub height: Option<f64>,
-  /// The x position of the window.
-  pub x: Option<f64>,
-  /// The y position of the window.
-  pub y: Option<f64>,
-  /// Whether or not the window should be created with content protection mode.
-  pub content_protection: Option<bool>,
-  /// Whether or not the window is always on top.
-  pub always_on_top: Option<bool>,
-  /// Whether or not the window is always on bottom.
-  pub always_on_bottom: Option<bool>,
-  /// Whether or not the window is visible.
-  pub visible: Option<bool>,
-  /// Whether or not the window decorations are enabled.
-  pub decorations: Option<bool>,
-  /// Whether or not the window is visible on all workspaces
-  pub visible_on_all_workspaces: Option<bool>,
-  /// Whether or not the window is maximized.
-  pub maximized: Option<bool>,
-  /// Whether or not the window is maximizable
-  pub maximizable: Option<bool>,
-  /// Whether or not the window is minimizable
-  pub minimizable: Option<bool>,
-  /// Whether or not the window is focused
-  pub focused: Option<bool>,
-  /// Whether or not the window is transparent
-  pub transparent: Option<bool>,
-  /// The fullscreen state of the window.
-  pub fullscreen: Option<FullscreenType>,
-}
-
-impl Default for BrowserWindowOptions {
-  fn default() -> Self {
-    Self {
-      resizable: Some(true),
-      title: Some("WebviewJS".to_owned()),
-      width: Some(800.0),
-      height: Some(600.0),
-      x: Some(0.0),
-      y: Some(0.0),
-      content_protection: Some(false),
-      always_on_top: Some(false),
-      always_on_bottom: Some(false),
-      visible: Some(true),
-      decorations: Some(true),
-      visible_on_all_workspaces: Some(false),
-      maximized: Some(false),
-      maximizable: Some(true),
-      minimizable: Some(true),
-      focused: Some(true),
-      transparent: Some(false),
-      fullscreen: None,
-    }
-  }
-}
+use crate::types::{
+  BrowserWindowOptions, FullscreenType, JsProgressBar, JsProgressBarState, Theme, WebviewOptions,
+};
+use crate::utils::{convert_monitor, error_with_context, tao_to_theme, theme_to_tao};
+use crate::webview::JsWebview;
 
 #[napi]
 pub struct BrowserWindow {
   is_child_window: bool,
   window: Window,
+}
+
+/// Applies browser window options to a WindowBuilder
+fn apply_window_options(
+  mut window: WindowBuilder,
+  options: &BrowserWindowOptions,
+) -> WindowBuilder {
+  // Size
+  if let Some(width) = options.width {
+    window = window.with_inner_size(PhysicalSize::new(width, options.height.unwrap()));
+  }
+
+  // Position
+  if let Some(x) = options.x {
+    window = window.with_position(LogicalPosition::new(x, options.y.unwrap()));
+  }
+
+  // Window properties
+  if let Some(resizable) = options.resizable {
+    window = window.with_resizable(resizable);
+  }
+
+  if let Some(visible) = options.visible {
+    window = window.with_visible(visible);
+  }
+
+  if let Some(decorations) = options.decorations {
+    window = window.with_decorations(decorations);
+  }
+
+  if let Some(always_on_top) = options.always_on_top {
+    window = window.with_always_on_top(always_on_top);
+  }
+
+  if let Some(always_on_bottom) = options.always_on_bottom {
+    window = window.with_always_on_bottom(always_on_bottom);
+  }
+
+  if let Some(visible_on_all_workspaces) = options.visible_on_all_workspaces {
+    window = window.with_visible_on_all_workspaces(visible_on_all_workspaces);
+  }
+
+  if let Some(maximized) = options.maximized {
+    window = window.with_maximized(maximized);
+  }
+
+  if let Some(maximizable) = options.maximizable {
+    window = window.with_maximizable(maximizable);
+  }
+
+  if let Some(minimizable) = options.minimizable {
+    window = window.with_minimizable(minimizable);
+  }
+
+  if let Some(focused) = options.focused {
+    window = window.with_focused(focused);
+  }
+
+  if let Some(transparent) = options.transparent {
+    window = window.with_transparent(transparent);
+    #[cfg(target_os = "windows")]
+    {
+      use tao::platform::windows::WindowBuilderExtWindows;
+      window = window.with_undecorated_shadow(false);
+    }
+  }
+
+  // Fullscreen
+  if let Some(ref fullscreen) = options.fullscreen {
+    let fs = match fullscreen {
+      FullscreenType::Borderless => Some(Fullscreen::Borderless(None)),
+      _ => None,
+    };
+    window = window.with_fullscreen(fs);
+  }
+
+  // Title
+  if let Some(ref title) = options.title {
+    window = window.with_title(title);
+  }
+
+  window
 }
 
 #[napi]
@@ -158,86 +108,11 @@ impl BrowserWindow {
     child: bool,
   ) -> Result<Self> {
     let options = options.unwrap_or_default();
+    let window = apply_window_options(WindowBuilder::new(), &options);
 
-    let mut window = WindowBuilder::new();
-
-    if let Some(resizable) = options.resizable {
-      window = window.with_resizable(resizable);
-    }
-
-    if let Some(width) = options.width {
-      window = window.with_inner_size(PhysicalSize::new(width, options.height.unwrap()));
-    }
-
-    if let Some(x) = options.x {
-      window = window.with_position(LogicalPosition::new(x, options.y.unwrap()));
-    }
-
-    if let Some(visible) = options.visible {
-      window = window.with_visible(visible);
-    }
-
-    if let Some(decorations) = options.decorations {
-      window = window.with_decorations(decorations);
-    }
-
-    if let Some(always_on_top) = options.always_on_top {
-      window = window.with_always_on_top(always_on_top);
-    }
-
-    if let Some(always_on_bottom) = options.always_on_bottom {
-      window = window.with_always_on_bottom(always_on_bottom);
-    }
-
-    if let Some(visible_on_all_workspaces) = options.visible_on_all_workspaces {
-      window = window.with_visible_on_all_workspaces(visible_on_all_workspaces);
-    }
-
-    if let Some(maximized) = options.maximized {
-      window = window.with_maximized(maximized);
-    }
-
-    if let Some(maximizable) = options.maximizable {
-      window = window.with_maximizable(maximizable);
-    }
-
-    if let Some(minimizable) = options.minimizable {
-      window = window.with_minimizable(minimizable);
-    }
-
-    if let Some(focused) = options.focused {
-      window = window.with_focused(focused);
-    }
-
-    if let Some(transparent) = options.transparent {
-      window = window.with_transparent(transparent);
-      #[cfg(target_os = "windows")]
-      {
-        use tao::platform::windows::WindowBuilderExtWindows;
-        window = window.with_undecorated_shadow(false);
-      }
-    }
-
-    if let Some(fullscreen) = options.fullscreen {
-      let fs = match fullscreen {
-        // Some(FullscreenType::Exclusive) => Some(Fullscreen::Exclusive()),
-        FullscreenType::Borderless => Some(Fullscreen::Borderless(None)),
-        _ => None,
-      };
-
-      window = window.with_fullscreen(fs);
-    }
-
-    if let Some(title) = options.title {
-      window = window.with_title(&title);
-    }
-
-    let window = window.build(event_loop).map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to create window: {}", e),
-      )
-    })?;
+    let window = window
+      .build(event_loop)
+      .map_err(|e| error_with_context("create window", &e.to_string()))?;
 
     Ok(Self {
       window,
@@ -351,23 +226,13 @@ impl BrowserWindow {
   #[napi(getter)]
   /// Gets the window theme.
   pub fn get_theme(&self) -> Theme {
-    match self.window.theme() {
-      tao::window::Theme::Light => Theme::Light,
-      tao::window::Theme::Dark => Theme::Dark,
-      _ => Theme::System,
-    }
+    tao_to_theme(self.window.theme())
   }
 
   #[napi]
   /// Sets the window theme.
   pub fn set_theme(&self, theme: Theme) {
-    let theme = match theme {
-      Theme::Light => Some(tao::window::Theme::Light),
-      Theme::Dark => Some(tao::window::Theme::Dark),
-      _ => None,
-    };
-
-    self.window.set_theme(theme);
+    self.window.set_theme(theme_to_tao(theme));
   }
 
   #[napi]
@@ -389,12 +254,7 @@ impl BrowserWindow {
         Either::B(path) => Icon::from_path(&path, PhysicalSize::new(width, height).into()),
       };
 
-      let parsed = ico.map_err(|e| {
-        napi::Error::new(
-          napi::Status::GenericFailure,
-          format!("Failed to set window icon: {}", e),
-        )
-      })?;
+      let parsed = ico.map_err(|e| error_with_context("set window icon", &e.to_string()))?;
 
       self.window.set_window_icon(Some(parsed));
     }
@@ -457,118 +317,30 @@ impl BrowserWindow {
 
   #[napi]
   /// Get available monitors.
-  pub fn get_available_monitors(&self) -> Vec<Monitor> {
+  pub fn get_available_monitors(&self) -> Vec<crate::types::Monitor> {
     self
       .window
       .available_monitors()
-      .map(|m| Monitor {
-        name: m.name(),
-        scale_factor: m.scale_factor(),
-        size: Dimensions {
-          width: m.size().width,
-          height: m.size().height,
-        },
-        position: Position {
-          x: m.position().x,
-          y: m.position().y,
-        },
-        video_modes: m
-          .video_modes()
-          .map(|v| JsVideoMode {
-            size: Dimensions {
-              width: v.size().width,
-              height: v.size().height,
-            },
-            bit_depth: v.bit_depth(),
-            refresh_rate: v.refresh_rate(),
-          })
-          .collect(),
-      })
+      .map(convert_monitor)
       .collect()
   }
 
   #[napi]
   /// Get the current monitor.
-  pub fn get_current_monitor(&self) -> Option<Monitor> {
-    self.window.current_monitor().map(|monitor| Monitor {
-      name: monitor.name(),
-      scale_factor: monitor.scale_factor(),
-      size: Dimensions {
-        width: monitor.size().width,
-        height: monitor.size().height,
-      },
-      position: Position {
-        x: monitor.position().x,
-        y: monitor.position().y,
-      },
-      video_modes: monitor
-        .video_modes()
-        .map(|v| JsVideoMode {
-          size: Dimensions {
-            width: v.size().width,
-            height: v.size().height,
-          },
-          bit_depth: v.bit_depth(),
-          refresh_rate: v.refresh_rate(),
-        })
-        .collect(),
-    })
+  pub fn get_current_monitor(&self) -> Option<crate::types::Monitor> {
+    self.window.current_monitor().map(convert_monitor)
   }
 
   #[napi]
   /// Get the primary monitor.
-  pub fn get_primary_monitor(&self) -> Option<Monitor> {
-    self.window.primary_monitor().map(|monitor| Monitor {
-      name: monitor.name(),
-      scale_factor: monitor.scale_factor(),
-      size: Dimensions {
-        width: monitor.size().width,
-        height: monitor.size().height,
-      },
-      position: Position {
-        x: monitor.position().x,
-        y: monitor.position().y,
-      },
-      video_modes: monitor
-        .video_modes()
-        .map(|v| JsVideoMode {
-          size: Dimensions {
-            width: v.size().width,
-            height: v.size().height,
-          },
-          bit_depth: v.bit_depth(),
-          refresh_rate: v.refresh_rate(),
-        })
-        .collect(),
-    })
+  pub fn get_primary_monitor(&self) -> Option<crate::types::Monitor> {
+    self.window.primary_monitor().map(convert_monitor)
   }
 
   #[napi]
   /// Get the monitor from the given point.
-  pub fn get_monitor_from_point(&self, x: f64, y: f64) -> Option<Monitor> {
-    self.window.monitor_from_point(x, y).map(|monitor| Monitor {
-      name: monitor.name(),
-      scale_factor: monitor.scale_factor(),
-      size: Dimensions {
-        width: monitor.size().width,
-        height: monitor.size().height,
-      },
-      position: Position {
-        x: monitor.position().x,
-        y: monitor.position().y,
-      },
-      video_modes: monitor
-        .video_modes()
-        .map(|v| JsVideoMode {
-          size: Dimensions {
-            width: v.size().width,
-            height: v.size().height,
-          },
-          bit_depth: v.bit_depth(),
-          refresh_rate: v.refresh_rate(),
-        })
-        .collect(),
-    })
+  pub fn get_monitor_from_point(&self, x: f64, y: f64) -> Option<crate::types::Monitor> {
+    self.window.monitor_from_point(x, y).map(convert_monitor)
   }
 
   #[napi]
@@ -634,18 +406,18 @@ impl BrowserWindow {
   /// as tao requires the event loop to handle window closing. Use this when you want to
   /// close a specific window (like a login window) and potentially reopen it later.
   pub fn close(&self) {
-    self.window.set_visible(false);
+    self.set_visible(false);
   }
 
   #[napi]
   /// Hides the window without destroying it.
   pub fn hide(&self) {
-    self.window.set_visible(false);
+    self.set_visible(false);
   }
 
   #[napi]
   /// Shows the window if it was hidden.
   pub fn show(&self) {
-    self.window.set_visible(true);
+    self.set_visible(true);
   }
 }

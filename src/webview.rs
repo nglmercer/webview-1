@@ -9,84 +9,82 @@ use napi_derive::*;
 use tao::dpi::{LogicalPosition, LogicalSize};
 use wry::{http::Request, Rect, WebViewBuilder};
 
-use crate::{HeaderData, IpcMessage};
+use crate::types::{HeaderData, IpcMessage, WebviewOptions};
+use crate::utils::{error_with_context, theme_to_wry};
+use wry::WebViewBuilderExtWindows;
 
-/// Represents the theme of the window.
-#[napi]
-pub enum Theme {
-  /// The light theme.
-  Light,
-  /// The dark theme.
-  Dark,
-  /// The system theme.
-  System,
-}
+/// Applies webview options to a WebViewBuilder
+fn apply_webview_options<'a>(
+  mut webview: WebViewBuilder<'a>,
+  options: &'a WebviewOptions,
+) -> WebViewBuilder<'a> {
+  // Bounds
+  webview = webview.with_bounds(Rect {
+    position: LogicalPosition::new(options.x.unwrap_or(0.0), options.y.unwrap_or(0.0)).into(),
+    size: LogicalSize::new(
+      options.width.unwrap_or(800.0),
+      options.height.unwrap_or(600.0),
+    )
+    .into(),
+  });
 
-#[napi(object)]
-pub struct WebviewOptions {
-  /// The URL to load.
-  pub url: Option<String>,
-  /// The HTML content to load.
-  pub html: Option<String>,
-  /// The width of the window.
-  pub width: Option<f64>,
-  /// The height of the window.
-  pub height: Option<f64>,
-  /// The x position of the window.
-  pub x: Option<f64>,
-  /// The y position of the window.
-  pub y: Option<f64>,
-  /// Whether to enable devtools. Default is `true`.
-  pub enable_devtools: Option<bool>,
-  /// Whether the window is incognito. Default is `false`.
-  pub incognito: Option<bool>,
-  /// The default user agent.
-  pub user_agent: Option<String>,
-  /// Whether the webview should be built as a child.
-  pub child: Option<bool>,
-  /// The preload script to inject.
-  pub preload: Option<String>,
-  /// Whether the window is transparent. Default is `false`.
-  pub transparent: Option<bool>,
-  /// The default theme.
-  pub theme: Option<Theme>,
-  /// Whether the window is zoomable via hotkeys or gestures.
-  pub hotkeys_zoom: Option<bool>,
-  /// Whether the clipboard access is enabled.
-  pub clipboard: Option<bool>,
-  /// Whether the autoplay policy is enabled.
-  pub autoplay: Option<bool>,
-  /// Indicates whether horizontal swipe gestures trigger backward and forward page navigation.
-  pub back_forward_navigation_gestures: Option<bool>,
-}
+  // Content
+  if let Some(devtools) = options.enable_devtools {
+    webview = webview.with_devtools(devtools);
+  }
 
-impl Default for WebviewOptions {
-  fn default() -> Self {
-    Self {
-      url: None,
-      html: None,
-      width: None,
-      height: None,
-      x: None,
-      y: None,
-      enable_devtools: Some(true),
-      incognito: Some(false),
-      user_agent: Some("WebviewJS".to_owned()),
-      child: Some(false),
-      preload: None,
-      transparent: Some(false),
-      theme: None,
-      hotkeys_zoom: Some(true),
-      clipboard: Some(true),
-      autoplay: Some(true),
-      back_forward_navigation_gestures: Some(true),
+  if let Some(incognito) = options.incognito {
+    webview = webview.with_incognito(incognito);
+  }
+
+  if let Some(transparent) = options.transparent {
+    webview = webview.with_transparent(transparent);
+  }
+
+  if let Some(autoplay) = options.autoplay {
+    webview = webview.with_autoplay(autoplay);
+  }
+
+  if let Some(clipboard) = options.clipboard {
+    webview = webview.with_clipboard(clipboard);
+  }
+
+  if let Some(back_forward_navigation_gestures) = options.back_forward_navigation_gestures {
+    webview = webview.with_back_forward_navigation_gestures(back_forward_navigation_gestures);
+  }
+
+  if let Some(hotkeys_zoom) = options.hotkeys_zoom {
+    webview = webview.with_hotkeys_zoom(hotkeys_zoom);
+  }
+
+  // Windows-specific options
+  #[cfg(target_os = "windows")]
+  {
+    if let Some(ref theme) = options.theme {
+      webview = webview.with_theme(theme_to_wry(*theme));
     }
   }
+
+  // User agent
+  if let Some(ref user_agent) = options.user_agent {
+    webview = webview.with_user_agent(user_agent);
+  }
+
+  // Content loading
+  if let Some(ref html) = options.html {
+    webview = webview.with_html(html);
+  }
+
+  if let Some(ref url) = options.url {
+    webview = webview.with_url(url);
+  }
+
+  webview
 }
 
 #[napi(js_name = "Webview")]
 pub struct JsWebview {
-  /// The inner webview.
+  /// The inner webview
   webview_inner: wry::WebView,
   /// The ipc handler fn
   ipc_state: Rc<RefCell<Option<FunctionRef<IpcMessage, ()>>>>,
@@ -95,79 +93,11 @@ pub struct JsWebview {
 #[napi]
 impl JsWebview {
   pub fn create(env: &Env, window: &tao::window::Window, options: WebviewOptions) -> Result<Self> {
-    // let mut webview = if options.child.unwrap_or(false) {
-    //   WebViewBuilder::new_as_child(window)
-    // } else {
-    //   WebViewBuilder::new(window)
-    // };
-    let mut webview = WebViewBuilder::new();
+    let mut webview = apply_webview_options(WebViewBuilder::new(), &options);
 
-    if let Some(devtools) = options.enable_devtools {
-      webview = webview.with_devtools(devtools);
-    }
-
-    webview = webview.with_bounds(Rect {
-      position: LogicalPosition::new(options.x.unwrap_or(0.0), options.y.unwrap_or(0.0)).into(),
-      size: LogicalSize::new(
-        options.width.unwrap_or(800.0),
-        options.height.unwrap_or(600.0),
-      )
-      .into(),
-    });
-
-    if let Some(incognito) = options.incognito {
-      webview = webview.with_incognito(incognito);
-    }
-
-    if let Some(preload) = options.preload {
-      webview = webview.with_initialization_script(&preload);
-    }
-
-    if let Some(transparent) = options.transparent {
-      webview = webview.with_transparent(transparent);
-    }
-
-    if let Some(autoplay) = options.autoplay {
-      webview = webview.with_autoplay(autoplay);
-    }
-
-    if let Some(clipboard) = options.clipboard {
-      webview = webview.with_clipboard(clipboard);
-    }
-
-    if let Some(back_forward_navigation_gestures) = options.back_forward_navigation_gestures {
-      webview = webview.with_back_forward_navigation_gestures(back_forward_navigation_gestures);
-    }
-
-    if let Some(hotkeys_zoom) = options.hotkeys_zoom {
-      webview = webview.with_hotkeys_zoom(hotkeys_zoom);
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-      use wry::WebViewBuilderExtWindows;
-
-      if let Some(theme) = options.theme {
-        let theme = match theme {
-          Theme::Light => wry::Theme::Light,
-          Theme::Dark => wry::Theme::Dark,
-          _ => wry::Theme::Auto,
-        };
-
-        webview = webview.with_theme(theme)
-      }
-    }
-
-    if let Some(user_agent) = options.user_agent {
-      webview = webview.with_user_agent(&user_agent);
-    }
-
-    if let Some(html) = options.html {
-      webview = webview.with_html(&html);
-    }
-
-    if let Some(url) = options.url {
-      webview = webview.with_url(&url);
+    // Preload script
+    if let Some(ref preload) = options.preload {
+      webview = webview.with_initialization_script(preload);
     }
 
     let ipc_state = Rc::new(RefCell::new(None::<FunctionRef<IpcMessage, ()>>));
@@ -175,7 +105,7 @@ impl JsWebview {
     let env_copy = *env;
 
     let ipc_handler = move |req: Request<String>| {
-      let borrowed = RefCell::borrow(&ipc_state_clone);
+      let borrowed = ipc_state_clone.borrow();
       if let Some(func) = borrowed.as_ref() {
         let on_ipc_msg = func.borrow_back(&env_copy);
 
@@ -208,39 +138,34 @@ impl JsWebview {
 
     webview = webview.with_ipc_handler(ipc_handler);
 
-    let handle_build_error = |e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to create webview: {}", e),
-      )
-    };
-
-    #[cfg(not(target_os = "linux"))]
-    let webview = {
-      if options.child.unwrap_or(false) {
-        webview.build_as_child(&window).map_err(handle_build_error)
-      } else {
-        webview.build(&window).map_err(handle_build_error)
-      }
-    }?;
-
-    #[cfg(target_os = "linux")]
-    let webview = {
-      if options.child.unwrap_or(false) {
-        webview
-          .build_as_child(&window)
-          .map_err(handle_build_error)?
-      } else {
-        webview.build(&window).map_err(handle_build_error)?
-      }
-    };
+    let webview_inner = build_webview(webview, window, options.child.unwrap_or(false))?;
 
     Ok(Self {
-      webview_inner: webview,
+      webview_inner,
       ipc_state,
     })
   }
+}
 
+/// Builds the webview either as a child or as a regular webview
+fn build_webview(
+  webview: WebViewBuilder,
+  window: &tao::window::Window,
+  as_child: bool,
+) -> Result<wry::WebView> {
+  if as_child {
+    webview
+      .build_as_child(window)
+      .map_err(|e| error_with_context("create child webview", &e.to_string()))
+  } else {
+    webview
+      .build(window)
+      .map_err(|e| error_with_context("create webview", &e.to_string()))
+  }
+}
+
+#[napi]
+impl JsWebview {
   #[napi(constructor)]
   pub fn new() -> Result<Self> {
     Err(napi::Error::new(
@@ -258,34 +183,28 @@ impl JsWebview {
   #[napi]
   /// Launch a print modal for this window's contents.
   pub fn print(&self) -> Result<()> {
-    self.webview_inner.print().map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to print: {}", e),
-      )
-    })
+    self
+      .webview_inner
+      .print()
+      .map_err(|e| error_with_context("print", &e.to_string()))
   }
 
   #[napi]
   /// Set webview zoom level.
   pub fn zoom(&self, scale_factor: f64) -> Result<()> {
-    self.webview_inner.zoom(scale_factor).map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to zoom: {}", e),
-      )
-    })
+    self
+      .webview_inner
+      .zoom(scale_factor)
+      .map_err(|e| error_with_context("zoom", &e.to_string()))
   }
 
   #[napi]
   /// Hides or shows the webview.
   pub fn set_webview_visibility(&self, visible: bool) -> Result<()> {
-    self.webview_inner.set_visible(visible).map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to set webview visibility: {}", e),
-      )
-    })
+    self
+      .webview_inner
+      .set_visible(visible)
+      .map_err(|e| error_with_context("set webview visibility", &e.to_string()))
   }
 
   #[napi]
@@ -309,23 +228,19 @@ impl JsWebview {
   #[napi]
   /// Loads the given URL.
   pub fn load_url(&self, url: String) -> Result<()> {
-    self.webview_inner.load_url(&url).map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to load URL: {}", e),
-      )
-    })
+    self
+      .webview_inner
+      .load_url(&url)
+      .map_err(|e| error_with_context("load URL", &e.to_string()))
   }
 
   #[napi]
   /// Loads the given HTML content.
   pub fn load_html(&self, html: String) -> Result<()> {
-    self.webview_inner.load_html(&html).map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to load HTML: {}", e),
-      )
-    })
+    self
+      .webview_inner
+      .load_html(&html)
+      .map_err(|e| error_with_context("load HTML", &e.to_string()))
   }
 
   #[napi]
@@ -334,7 +249,7 @@ impl JsWebview {
     self
       .webview_inner
       .evaluate_script(&js)
-      .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("{}", e)))
+      .map_err(|e| error_with_context("evaluate script", &e.to_string()))
   }
 
   #[napi]
@@ -348,17 +263,15 @@ impl JsWebview {
       .evaluate_script_with_callback(&js, move |val| {
         callback.call(Ok(val), ThreadsafeFunctionCallMode::Blocking);
       })
-      .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("{}", e)))
+      .map_err(|e| error_with_context("evaluate script with callback", &e.to_string()))
   }
 
   #[napi]
   /// Reloads the webview.
   pub fn reload(&self) -> Result<()> {
-    self.webview_inner.reload().map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("Failed to reload: {}", e),
-      )
-    })
+    self
+      .webview_inner
+      .reload()
+      .map_err(|e| error_with_context("reload", &e.to_string()))
   }
 }

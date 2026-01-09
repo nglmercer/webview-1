@@ -1,6 +1,6 @@
 // const requireScript = require('node:module').createRequire(__filename);
 // const { Application } = requireScript('../index.js');
-const { Application } = require('../index.js');
+import { Application } from '../index.js';
 
 const app = new Application();
 const window = app.createBrowserWindow();
@@ -32,7 +32,7 @@ if (!webview.isDevtoolsOpen()) webview.openDevtools();
 
 webview.onIpcMessage((data) => {
     const reply = `You sent ${data.body.toString('utf-8')}`;
-    window.evaluateScript(`onIpcMessage("${reply}")`)
+    webview.evaluateScript(`onIpcMessage("${reply}")`)
 })
 
 app.run();

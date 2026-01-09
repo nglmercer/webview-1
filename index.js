@@ -588,3 +588,4 @@ module.exports.ProgressBarState = nativeBinding.ProgressBarState
 module.exports.JsProgressBarState = nativeBinding.JsProgressBarState
 module.exports.Theme = nativeBinding.Theme
 module.exports.WebviewApplicationEvent = nativeBinding.WebviewApplicationEvent
+module.exports.WindowCommand = nativeBinding.WindowCommand
