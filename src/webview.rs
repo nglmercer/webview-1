@@ -9,10 +9,11 @@ use napi_derive::*;
 use tao::dpi::{LogicalPosition, LogicalSize};
 use wry::{http::Request, Rect, WebViewBuilder};
 
-use crate::{HeaderData, IpcMessage};
+use crate::{ipc, HeaderData, IpcMessage};
 
 /// Represents the theme of the window.
 #[napi(js_name = "Theme")]
+#[derive(serde_derive::Serialize)]
 pub enum JsTheme {
   /// The light theme.
   Light,
@@ -22,7 +23,11 @@ pub enum JsTheme {
   System,
 }
 
+// Export Theme as well for use in other modules
+pub use JsTheme as Theme;
+
 #[napi(object)]
+#[derive(serde_derive::Serialize)]
 pub struct WebviewOptions {
   /// The URL to load.
   pub url: Option<String>,
@@ -52,9 +57,9 @@ pub struct WebviewOptions {
   pub theme: Option<JsTheme>,
   /// Whether the window is zoomable via hotkeys or gestures.
   pub hotkeys_zoom: Option<bool>,
-  /// Whether the clipboard access is enabled.
+  /// Whether clipboard access is enabled.
   pub clipboard: Option<bool>,
-  /// Whether the autoplay policy is enabled.
+  /// Whether autoplay policy is enabled.
   pub autoplay: Option<bool>,
   /// Indicates whether horizontal swipe gestures trigger backward and forward page navigation.
   pub back_forward_navigation_gestures: Option<bool>,
@@ -87,9 +92,13 @@ impl Default for WebviewOptions {
 #[napi(js_name = "Webview")]
 pub struct JsWebview {
   /// The inner webview.
-  webview_inner: wry::WebView,
+  webview_inner: Option<wry::WebView>,
   /// The ipc handler fn
   ipc_state: Rc<RefCell<Option<FunctionRef<IpcMessage, ()>>>>,
+  /// Window ID for IPC mode
+  window_id: u32,
+  /// IPC client for communicating with eventloop process (only in IPC mode)
+  ipc_client: Option<Rc<RefCell<Option<ipc::IpcClient>>>>,
 }
 
 #[napi]
@@ -241,9 +250,26 @@ impl JsWebview {
     };
 
     Ok(Self {
-      webview_inner: webview,
+      webview_inner: Some(webview),
       ipc_state,
+      window_id: 0,
+      ipc_client: None,
     })
+  }
+
+  /// Crea un JsWebview proxy que se comunica vía IPC con el proceso del eventloop
+  pub fn new_ipc_proxy(window_id: u32, ipc_client: Rc<RefCell<Option<ipc::IpcClient>>>) -> Self {
+    Self {
+      webview_inner: None,
+      ipc_state: Rc::new(RefCell::new(None::<FunctionRef<IpcMessage, ()>>)),
+      window_id,
+      ipc_client: Some(ipc_client),
+    }
+  }
+
+  /// Verifica si este webview está en modo IPC
+  fn is_ipc_mode(&self) -> bool {
+    self.ipc_client.is_some()
   }
 
   #[napi(constructor)]
@@ -263,83 +289,234 @@ impl JsWebview {
   #[napi]
   /// Launch a print modal for this window's contents.
   pub fn print(&self) -> Result<()> {
-    self.webview_inner.print().map_err(|e| {
-      napi::Error::new(
+    if self.is_ipc_mode() {
+      // En modo IPC, no soportamos print por ahora
+      Ok(())
+    } else if let Some(webview) = &self.webview_inner {
+      webview.print().map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to print: {}", e),
+        )
+      })
+    } else {
+      Err(napi::Error::new(
         napi::Status::GenericFailure,
-        format!("Failed to print: {}", e),
-      )
-    })
+        "Webview not initialized",
+      ))
+    }
   }
 
   #[napi]
   /// Set webview zoom level.
-  pub fn zoom(&self, scale_facotr: f64) -> Result<()> {
-    self.webview_inner.zoom(scale_facotr).map_err(|e| {
-      napi::Error::new(
+  pub fn zoom(&self, scale_factor: f64) -> Result<()> {
+    if self.is_ipc_mode() {
+      // En modo IPC, no soportamos zoom por ahora
+      Ok(())
+    } else if let Some(webview) = &self.webview_inner {
+      webview.zoom(scale_factor).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to zoom: {}", e),
+        )
+      })
+    } else {
+      Err(napi::Error::new(
         napi::Status::GenericFailure,
-        format!("Failed to zoom: {}", e),
-      )
-    })
+        "Webview not initialized",
+      ))
+    }
   }
 
   #[napi]
   /// Hides or shows the webview.
   pub fn set_webview_visibility(&self, visible: bool) -> Result<()> {
-    self.webview_inner.set_visible(visible).map_err(|e| {
-      napi::Error::new(
+    if self.is_ipc_mode() {
+      // En modo IPC, no soportamos esto por ahora
+      Ok(())
+    } else if let Some(webview) = &self.webview_inner {
+      webview.set_visible(visible).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to set webview visibility: {}", e),
+        )
+      })
+    } else {
+      Err(napi::Error::new(
         napi::Status::GenericFailure,
-        format!("Failed to set webview visibility: {}", e),
-      )
-    })
+        "Webview not initialized",
+      ))
+    }
   }
 
   #[napi]
-  /// Whether the devtools is opened.
+  /// Whether devtools is opened.
   pub fn is_devtools_open(&self) -> bool {
-    self.webview_inner.is_devtools_open()
+    if self.is_ipc_mode() {
+      false
+    } else if let Some(webview) = &self.webview_inner {
+      webview.is_devtools_open()
+    } else {
+      false
+    }
   }
 
   #[napi]
-  /// Opens the devtools.
+  /// Opens devtools.
   pub fn open_devtools(&self) {
-    self.webview_inner.open_devtools();
+    if !self.is_ipc_mode() {
+      if let Some(webview) = &self.webview_inner {
+        webview.open_devtools();
+      }
+    }
   }
 
   #[napi]
-  /// Closes the devtools.
+  /// Closes devtools.
   pub fn close_devtools(&self) {
-    self.webview_inner.close_devtools();
+    if !self.is_ipc_mode() {
+      if let Some(webview) = &self.webview_inner {
+        webview.close_devtools();
+      }
+    }
   }
 
   #[napi]
   /// Loads the given URL.
   pub fn load_url(&self, url: String) -> Result<()> {
-    self.webview_inner.load_url(&url).map_err(|e| {
-      napi::Error::new(
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let borrowed: std::cell::Ref<'_, Option<ipc::IpcClient>> = (**ipc_client).borrow();
+        if let Some(client) = borrowed.as_ref() {
+          client
+            .send_request(ipc::IpcRequest::LoadUrl {
+              window_id: self.window_id,
+              url,
+            })
+            .map_err(|e| {
+              napi::Error::new(
+                napi::Status::GenericFailure,
+                format!("Failed to send IPC request: {}", e),
+              )
+            })?;
+          Ok(())
+        } else {
+          Err(napi::Error::new(
+            napi::Status::GenericFailure,
+            "IPC client not initialized",
+          ))
+        }
+      } else {
+        Err(napi::Error::new(
+          napi::Status::GenericFailure,
+          "IPC client not initialized",
+        ))
+      }
+    } else if let Some(webview) = &self.webview_inner {
+      webview.load_url(&url).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to load URL: {}", e),
+        )
+      })
+    } else {
+      Err(napi::Error::new(
         napi::Status::GenericFailure,
-        format!("Failed to load URL: {}", e),
-      )
-    })
+        "Webview not initialized",
+      ))
+    }
   }
 
   #[napi]
   /// Loads the given HTML content.
   pub fn load_html(&self, html: String) -> Result<()> {
-    self.webview_inner.load_html(&html).map_err(|e| {
-      napi::Error::new(
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let borrowed: std::cell::Ref<'_, Option<ipc::IpcClient>> = (**ipc_client).borrow();
+        if let Some(client) = borrowed.as_ref() {
+          client
+            .send_request(ipc::IpcRequest::LoadHtml {
+              window_id: self.window_id,
+              html,
+            })
+            .map_err(|e| {
+              napi::Error::new(
+                napi::Status::GenericFailure,
+                format!("Failed to send IPC request: {}", e),
+              )
+            })?;
+          Ok(())
+        } else {
+          Err(napi::Error::new(
+            napi::Status::GenericFailure,
+            "IPC client not initialized",
+          ))
+        }
+      } else {
+        Err(napi::Error::new(
+          napi::Status::GenericFailure,
+          "IPC client not initialized",
+        ))
+      }
+    } else if let Some(webview) = &self.webview_inner {
+      webview.load_html(&html).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to load HTML: {}", e),
+        )
+      })
+    } else {
+      Err(napi::Error::new(
         napi::Status::GenericFailure,
-        format!("Failed to load HTML: {}", e),
-      )
-    })
+        "Webview not initialized",
+      ))
+    }
   }
 
   #[napi]
   /// Evaluates the given JavaScript code.
   pub fn evaluate_script(&self, js: String) -> Result<()> {
-    self
-      .webview_inner
-      .evaluate_script(&js)
-      .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("{}", e)))
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let borrowed: std::cell::Ref<'_, Option<ipc::IpcClient>> = (**ipc_client).borrow();
+        if let Some(client) = borrowed.as_ref() {
+          client
+            .send_request(ipc::IpcRequest::EvaluateScript {
+              window_id: self.window_id,
+              script: js,
+            })
+            .map_err(|e| {
+              napi::Error::new(
+                napi::Status::GenericFailure,
+                format!("Failed to send IPC request: {}", e),
+              )
+            })?;
+          Ok(())
+        } else {
+          Err(napi::Error::new(
+            napi::Status::GenericFailure,
+            "IPC client not initialized",
+          ))
+        }
+      } else {
+        Err(napi::Error::new(
+          napi::Status::GenericFailure,
+          "IPC client not initialized",
+        ))
+      }
+    } else if let Some(webview) = &self.webview_inner {
+      webview
+        .evaluate_script(&js)
+        .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("{}", e)))
+    } else {
+      Err(napi::Error::new(
+        napi::Status::GenericFailure,
+        "Webview not initialized",
+      ))
+    }
   }
 
   #[napi]
@@ -348,13 +525,44 @@ impl JsWebview {
     js: String,
     callback: ThreadsafeFunction<String>,
   ) -> Result<()> {
-    let tsfn = callback.clone();
+    if self.is_ipc_mode() {
+      // En modo IPC, no soportamos callbacks por ahora
+      Err(napi::Error::new(
+        napi::Status::GenericFailure,
+        "evaluate_script_with_callback not supported in IPC mode",
+      ))
+    } else if let Some(webview) = &self.webview_inner {
+      webview
+        .evaluate_script_with_callback(&js, move |val| {
+          callback.call(Ok(val), ThreadsafeFunctionCallMode::Blocking);
+        })
+        .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("{}", e)))
+    } else {
+      Err(napi::Error::new(
+        napi::Status::GenericFailure,
+        "Webview not initialized",
+      ))
+    }
+  }
 
-    self
-      .webview_inner
-      .evaluate_script_with_callback(&js, move |val| {
-        tsfn.call(Ok(val), ThreadsafeFunctionCallMode::Blocking);
+  #[napi]
+  /// Reloads the webview.
+  pub fn reload(&self) -> Result<()> {
+    if self.is_ipc_mode() {
+      // En modo IPC, no soportamos reload por ahora
+      Ok(())
+    } else if let Some(webview) = &self.webview_inner {
+      webview.reload().map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to reload: {}", e),
+        )
       })
-      .map_err(|e| napi::Error::new(napi::Status::GenericFailure, format!("{}", e)))
+    } else {
+      Err(napi::Error::new(
+        napi::Status::GenericFailure,
+        "Webview not initialized",
+      ))
+    }
   }
 }

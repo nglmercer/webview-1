@@ -1,17 +1,21 @@
 use napi::{Either, Env, Result};
 use napi_derive::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 use tao::{
   dpi::{LogicalPosition, PhysicalSize},
   event_loop::EventLoop,
   window::{Fullscreen, Icon, ProgressBarState, Window, WindowBuilder},
 };
 
-use crate::webview::{JsTheme, JsWebview, WebviewOptions};
+use crate::ipc;
+use crate::webview::{JsWebview, Theme, WebviewOptions};
 
 // #[cfg(target_os = "windows")]
 // use tao::platform::windows::IconExtWindows;
 
 #[napi]
+#[derive(serde_derive::Serialize)]
 pub enum FullscreenType {
   /// Exclusive fullscreen.
   Exclusive,
@@ -80,6 +84,7 @@ pub struct JsProgressBar {
 }
 
 #[napi(object)]
+#[derive(serde_derive::Serialize)]
 pub struct BrowserWindowOptions {
   /// Whether the window is resizable. Default is `true`.
   pub resizable: Option<bool>,
@@ -147,7 +152,11 @@ impl Default for BrowserWindowOptions {
 #[napi]
 pub struct BrowserWindow {
   is_child_window: bool,
-  window: Window,
+  window: Option<Window>,
+  /// Unique identifier for this window
+  id: u32,
+  /// IPC client for communicating with eventloop process (only in IPC mode)
+  ipc_client: Option<Rc<RefCell<Option<ipc::IpcClient>>>>,
 }
 
 #[napi]
@@ -156,8 +165,9 @@ impl BrowserWindow {
     event_loop: &EventLoop<()>,
     options: Option<BrowserWindowOptions>,
     child: bool,
+    window_id: u32,
   ) -> Result<Self> {
-    let options = options.unwrap_or(BrowserWindowOptions::default());
+    let options = options.unwrap_or_default();
 
     let mut window = WindowBuilder::new();
 
@@ -240,16 +250,72 @@ impl BrowserWindow {
     })?;
 
     Ok(Self {
-      window,
+      window: Some(window),
       is_child_window: child,
+      id: window_id,
+      ipc_client: None,
     })
+  }
+
+  /// Crea un BrowserWindow proxy que se comunica vía IPC con el proceso del eventloop
+  pub fn new_ipc_proxy(window_id: u32, ipc_client: Rc<RefCell<Option<ipc::IpcClient>>>) -> Self {
+    Self {
+      window: None,
+      is_child_window: false,
+      id: window_id,
+      ipc_client: Some(ipc_client),
+    }
+  }
+
+  /// Verifica si esta ventana está en modo IPC
+  fn is_ipc_mode(&self) -> bool {
+    self.ipc_client.is_some()
   }
 
   #[napi]
   /// Creates a webview on this window.
   pub fn create_webview(&mut self, env: Env, options: Option<WebviewOptions>) -> Result<JsWebview> {
-    let webview = JsWebview::create(&env, &self.window, options.unwrap_or(Default::default()))?;
-    Ok(webview)
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud al proceso del eventloop
+      let ipc_client = self.ipc_client.as_ref().unwrap();
+      let client_ref = ipc_client.borrow();
+      let client = client_ref.as_ref().ok_or_else(|| {
+        napi::Error::new(napi::Status::GenericFailure, "IPC client not initialized")
+      })?;
+
+      let options_json = serde_json::to_value(options.unwrap_or_default()).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to serialize options: {}", e),
+        )
+      })?;
+
+      let request = ipc::IpcRequest::CreateWebview {
+        window_id: self.id,
+        options: options_json,
+      };
+
+      client.send_request(request).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to send IPC request: {}", e),
+        )
+      })?;
+
+      // Retornar un JsWebview proxy
+      Ok(JsWebview::new_ipc_proxy(
+        self.id,
+        self.ipc_client.clone().unwrap(),
+      ))
+    } else {
+      // Modo tradicional: crear webview directamente
+      let window = self
+        .window
+        .as_ref()
+        .ok_or_else(|| napi::Error::new(napi::Status::GenericFailure, "Window not initialized"))?;
+      let webview = JsWebview::create(&env, window, options.unwrap_or_default())?;
+      Ok(webview)
+    }
   }
 
   #[napi(getter)]
@@ -258,116 +324,253 @@ impl BrowserWindow {
     self.is_child_window
   }
 
+  #[napi(getter)]
+  /// Gets the unique identifier for this window.
+  pub fn id(&self) -> u32 {
+    self.id
+  }
+
+  #[napi]
+  /// Destroys the window by hiding it permanently.
+  /// This is a more permanent close than hide(), as it indicates the window
+  /// should not be reopened. Use this when you want to close a specific window
+  /// (like a login window) permanently.
+  pub fn destroy(&self) {
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let client_ref = ipc_client.borrow();
+        if let Some(client) = client_ref.as_ref() {
+          let _ = client.send_request_async(ipc::IpcRequest::SetWindowVisible {
+            window_id: self.id,
+            visible: false,
+          });
+        }
+      }
+    } else if let Some(window) = &self.window {
+      window.set_visible(false);
+    }
+  }
+
   #[napi]
   /// Whether the window is focused.
   pub fn is_focused(&self) -> bool {
-    self.window.is_focused()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_focused()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is visible.
   pub fn is_visible(&self) -> bool {
-    self.window.is_visible()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_visible()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is decorated.
   pub fn is_decorated(&self) -> bool {
-    self.window.is_decorated()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_decorated()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is closable.
   pub fn is_closable(&self) -> bool {
-    self.window.is_closable()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_closable()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is maximizable.
   pub fn is_maximizable(&self) -> bool {
-    self.window.is_maximizable()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_maximizable()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is minimizable.
   pub fn is_minimizable(&self) -> bool {
-    self.window.is_minimizable()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_minimizable()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is maximized.
   pub fn is_maximized(&self) -> bool {
-    self.window.is_maximized()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos false por defecto
+      false
+    } else if let Some(window) = &self.window {
+      window.is_maximized()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is minimized.
   pub fn is_minimized(&self) -> bool {
-    self.window.is_minimized()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos false por defecto
+      false
+    } else if let Some(window) = &self.window {
+      window.is_minimized()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Whether the window is resizable.
   pub fn is_resizable(&self) -> bool {
-    self.window.is_resizable()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos true por defecto
+      true
+    } else if let Some(window) = &self.window {
+      window.is_resizable()
+    } else {
+      false
+    }
   }
 
   #[napi]
   /// Sets the window title.
   pub fn set_title(&self, title: String) {
-    self.window.set_title(&title);
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let client_ref = ipc_client.borrow();
+        if let Some(client) = client_ref.as_ref() {
+          let _ = client.send_request_async(ipc::IpcRequest::SetWindowTitle {
+            window_id: self.id,
+            title,
+          });
+        }
+      }
+    } else if let Some(window) = &self.window {
+      window.set_title(&title);
+    }
   }
 
   #[napi(getter)]
   /// Sets the window title.
   pub fn get_title(&self) -> String {
-    self.window.title()
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos un valor por defecto
+      "WebviewJS".to_string()
+    } else if let Some(window) = &self.window {
+      window.title()
+    } else {
+      "Unknown".to_string()
+    }
   }
 
   #[napi]
   /// Sets closable.
   pub fn set_closable(&self, closable: bool) {
-    self.window.set_closable(closable);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_closable(closable);
+      }
+    }
   }
 
   #[napi]
   /// Sets maximizable.
   pub fn set_maximizable(&self, maximizable: bool) {
-    self.window.set_maximizable(maximizable);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_maximizable(maximizable);
+      }
+    }
   }
 
   #[napi]
   /// Sets minimizable.
   pub fn set_minimizable(&self, minimizable: bool) {
-    self.window.set_minimizable(minimizable);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_minimizable(minimizable);
+      }
+    }
   }
 
   #[napi]
   /// Sets resizable.
   pub fn set_resizable(&self, resizable: bool) {
-    self.window.set_resizable(resizable);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_resizable(resizable);
+      }
+    }
   }
 
   #[napi(getter)]
   /// Gets the window theme.
-  pub fn get_theme(&self) -> JsTheme {
-    match self.window.theme() {
-      tao::window::Theme::Light => JsTheme::Light,
-      tao::window::Theme::Dark => JsTheme::Dark,
-      _ => JsTheme::System,
+  pub fn get_theme(&self) -> Theme {
+    if self.is_ipc_mode() {
+      // En modo IPC, retornamos System por defecto
+      Theme::System
+    } else if let Some(window) = &self.window {
+      match window.theme() {
+        tao::window::Theme::Light => Theme::Light,
+        tao::window::Theme::Dark => Theme::Dark,
+        _ => Theme::System,
+      }
+    } else {
+      Theme::System
     }
   }
 
   #[napi]
   /// Sets the window theme.
-  pub fn set_theme(&self, theme: JsTheme) {
-    let theme = match theme {
-      JsTheme::Light => Some(tao::window::Theme::Light),
-      JsTheme::Dark => Some(tao::window::Theme::Dark),
-      _ => None,
-    };
-
-    self.window.set_theme(theme);
+  pub fn set_theme(&self, theme: Theme) {
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        let theme = match theme {
+          Theme::Light => Some(tao::window::Theme::Light),
+          Theme::Dark => Some(tao::window::Theme::Dark),
+          _ => None,
+        };
+        window.set_theme(theme);
+      }
+    }
   }
 
   #[napi]
@@ -378,23 +581,27 @@ impl BrowserWindow {
     width: u32,
     height: u32,
   ) -> Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-      use tao::platform::windows::IconExtWindows;
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        #[cfg(target_os = "windows")]
+        {
+          use tao::platform::windows::IconExtWindows;
 
-      let ico = match icon {
-        Either::A(bytes) => Icon::from_rgba(bytes, width, height),
-        Either::B(path) => Icon::from_path(&path, PhysicalSize::new(width, height).into()),
-      };
+          let ico = match icon {
+            Either::A(bytes) => Icon::from_rgba(bytes, width, height),
+            Either::B(path) => Icon::from_path(&path, PhysicalSize::new(width, height).into()),
+          };
 
-      let parsed = ico.map_err(|e| {
-        napi::Error::new(
-          napi::Status::GenericFailure,
-          format!("Failed to set window icon: {}", e),
-        )
-      })?;
+          let parsed = ico.map_err(|e| {
+            napi::Error::new(
+              napi::Status::GenericFailure,
+              format!("Failed to set window icon: {}", e),
+            )
+          })?;
 
-      self.window.set_window_icon(Some(parsed));
+          window.set_window_icon(Some(parsed));
+        }
+      }
     }
 
     Ok(())
@@ -403,77 +610,146 @@ impl BrowserWindow {
   #[napi]
   /// Removes the window icon.
   pub fn remove_window_icon(&self) {
-    self.window.set_window_icon(None);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_window_icon(None);
+      }
+    }
   }
 
   #[napi]
   /// Modifies the window's visibility.
   /// If `false`, this will hide all the window. If `true`, this will show the window.
   pub fn set_visible(&self, visible: bool) {
-    self.window.set_visible(visible);
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let client_ref = ipc_client.borrow();
+        if let Some(client) = client_ref.as_ref() {
+          let _ = client.send_request_async(ipc::IpcRequest::SetWindowVisible {
+            window_id: self.id,
+            visible,
+          });
+        }
+      }
+    } else if let Some(window) = &self.window {
+      window.set_visible(visible);
+    }
   }
 
   #[napi]
   /// Modifies the window's progress bar.
   pub fn set_progress_bar(&self, state: JsProgressBar) {
-    let progress_state = match state.state {
-      Some(JsProgressBarState::Normal) => Some(tao::window::ProgressState::Normal),
-      Some(JsProgressBarState::Indeterminate) => Some(tao::window::ProgressState::Indeterminate),
-      Some(JsProgressBarState::Paused) => Some(tao::window::ProgressState::Paused),
-      Some(JsProgressBarState::Error) => Some(tao::window::ProgressState::Error),
-      _ => None,
-    };
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        let progress_state = match state.state {
+          Some(JsProgressBarState::Normal) => Some(tao::window::ProgressState::Normal),
+          Some(JsProgressBarState::Indeterminate) => {
+            Some(tao::window::ProgressState::Indeterminate)
+          }
+          Some(JsProgressBarState::Paused) => Some(tao::window::ProgressState::Paused),
+          Some(JsProgressBarState::Error) => Some(tao::window::ProgressState::Error),
+          _ => None,
+        };
 
-    let progress_value = match state.progress {
-      Some(value) => Some(value as u64),
-      _ => None,
-    };
+        let progress_value = state.progress.map(|value| value as u64);
 
-    let progress = ProgressBarState {
-      progress: progress_value,
-      state: progress_state,
-      desktop_filename: None,
-    };
+        let progress = ProgressBarState {
+          progress: progress_value,
+          state: progress_state,
+          desktop_filename: None,
+        };
 
-    self.window.set_progress_bar(progress);
+        window.set_progress_bar(progress);
+      }
+    }
   }
 
   #[napi]
   /// Maximizes the window.
   pub fn set_maximized(&self, value: bool) {
-    self.window.set_maximized(value);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_maximized(value);
+      }
+    }
   }
 
   #[napi]
   /// Minimizes the window.
   pub fn set_minimized(&self, value: bool) {
-    self.window.set_minimized(value);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_minimized(value);
+      }
+    }
   }
 
   #[napi]
   /// Bring the window to front and focus.
   pub fn focus(&self) {
-    self.window.set_focus();
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_focus();
+      }
+    }
   }
 
   #[napi]
   /// Get available monitors.
   pub fn get_available_monitors(&self) -> Vec<Monitor> {
-    self
-      .window
-      .available_monitors()
-      .map(|m| Monitor {
-        name: m.name(),
-        scale_factor: m.scale_factor(),
+    if self.is_ipc_mode() {
+      vec![]
+    } else if let Some(window) = &self.window {
+      window
+        .available_monitors()
+        .map(|m| Monitor {
+          name: m.name(),
+          scale_factor: m.scale_factor(),
+          size: Dimensions {
+            width: m.size().width,
+            height: m.size().height,
+          },
+          position: Position {
+            x: m.position().x,
+            y: m.position().y,
+          },
+          video_modes: m
+            .video_modes()
+            .map(|v| JsVideoMode {
+              size: Dimensions {
+                width: v.size().width,
+                height: v.size().height,
+              },
+              bit_depth: v.bit_depth(),
+              refresh_rate: v.refresh_rate(),
+            })
+            .collect(),
+        })
+        .collect()
+    } else {
+      vec![]
+    }
+  }
+
+  #[napi]
+  /// Get the current monitor.
+  pub fn get_current_monitor(&self) -> Option<Monitor> {
+    if self.is_ipc_mode() {
+      None
+    } else if let Some(window) = &self.window {
+      window.current_monitor().map(|monitor| Monitor {
+        name: monitor.name(),
+        scale_factor: monitor.scale_factor(),
         size: Dimensions {
-          width: m.size().width,
-          height: m.size().height,
+          width: monitor.size().width,
+          height: monitor.size().height,
         },
         position: Position {
-          x: m.position().x,
-          y: m.position().y,
+          x: monitor.position().x,
+          y: monitor.position().y,
         },
-        video_modes: m
+        video_modes: monitor
           .video_modes()
           .map(|v| JsVideoMode {
             size: Dimensions {
@@ -485,45 +761,18 @@ impl BrowserWindow {
           })
           .collect(),
       })
-      .collect()
-  }
-
-  #[napi]
-  /// Get the current monitor.
-  pub fn get_current_monitor(&self) -> Option<Monitor> {
-    match self.window.current_monitor() {
-      Some(monitor) => Some(Monitor {
-        name: monitor.name(),
-        scale_factor: monitor.scale_factor(),
-        size: Dimensions {
-          width: monitor.size().width,
-          height: monitor.size().height,
-        },
-        position: Position {
-          x: monitor.position().x,
-          y: monitor.position().y,
-        },
-        video_modes: monitor
-          .video_modes()
-          .map(|v| JsVideoMode {
-            size: Dimensions {
-              width: v.size().width,
-              height: v.size().height,
-            },
-            bit_depth: v.bit_depth(),
-            refresh_rate: v.refresh_rate(),
-          })
-          .collect(),
-      }),
-      _ => None,
+    } else {
+      None
     }
   }
 
   #[napi]
   /// Get the primary monitor.
   pub fn get_primary_monitor(&self) -> Option<Monitor> {
-    match self.window.primary_monitor() {
-      Some(monitor) => Some(Monitor {
+    if self.is_ipc_mode() {
+      None
+    } else if let Some(window) = &self.window {
+      window.primary_monitor().map(|monitor| Monitor {
         name: monitor.name(),
         scale_factor: monitor.scale_factor(),
         size: Dimensions {
@@ -545,16 +794,19 @@ impl BrowserWindow {
             refresh_rate: v.refresh_rate(),
           })
           .collect(),
-      }),
-      _ => None,
+      })
+    } else {
+      None
     }
   }
 
   #[napi]
   /// Get the monitor from the given point.
   pub fn get_monitor_from_point(&self, x: f64, y: f64) -> Option<Monitor> {
-    match self.window.monitor_from_point(x, y) {
-      Some(monitor) => Some(Monitor {
+    if self.is_ipc_mode() {
+      None
+    } else if let Some(window) = &self.window {
+      window.monitor_from_point(x, y).map(|monitor| Monitor {
         name: monitor.name(),
         scale_factor: monitor.scale_factor(),
         size: Dimensions {
@@ -576,66 +828,152 @@ impl BrowserWindow {
             refresh_rate: v.refresh_rate(),
           })
           .collect(),
-      }),
-      _ => None,
+      })
+    } else {
+      None
     }
   }
 
   #[napi]
   /// Prevents the window contents from being captured by other apps.
   pub fn set_content_protection(&self, enabled: bool) {
-    self.window.set_content_protection(enabled);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_content_protection(enabled);
+      }
+    }
   }
 
   #[napi]
   /// Sets the window always on top.
   pub fn set_always_on_top(&self, enabled: bool) {
-    self.window.set_always_on_top(enabled);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_always_on_top(enabled);
+      }
+    }
   }
 
   #[napi]
   /// Sets always on bottom.
   pub fn set_always_on_bottom(&self, enabled: bool) {
-    self.window.set_always_on_bottom(enabled);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_always_on_bottom(enabled);
+      }
+    }
   }
 
   #[napi]
   /// Turn window decorations on or off.
   pub fn set_decorations(&self, enabled: bool) {
-    self.window.set_decorations(enabled);
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        window.set_decorations(enabled);
+      }
+    }
   }
 
   #[napi(getter)]
   /// Gets the window's current fullscreen state.
   pub fn get_fullscreen(&self) -> Option<FullscreenType> {
-    match self.window.fullscreen() {
-      None => None,
-      Some(Fullscreen::Borderless(None)) => Some(FullscreenType::Borderless),
-      _ => Some(FullscreenType::Exclusive),
+    if self.is_ipc_mode() {
+      None
+    } else if let Some(window) = &self.window {
+      match window.fullscreen() {
+        None => None,
+        Some(Fullscreen::Borderless(None)) => Some(FullscreenType::Borderless),
+        _ => Some(FullscreenType::Exclusive),
+      }
+    } else {
+      None
     }
   }
 
   #[napi]
   /// Sets the window to fullscreen or back.
   pub fn set_fullscreen(&self, fullscreen_type: Option<FullscreenType>) {
-    let monitor = self.window.current_monitor();
+    if !self.is_ipc_mode() {
+      if let Some(window) = &self.window {
+        let monitor = window.current_monitor();
 
-    if monitor.is_none() {
-      return;
-    };
+        if monitor.is_none() {
+          return;
+        };
 
-    let video_mode = monitor.unwrap().video_modes().next();
+        let video_mode = monitor.unwrap().video_modes().next();
 
-    if video_mode.is_none() {
-      return;
-    };
+        if video_mode.is_none() {
+          return;
+        };
 
-    let fs = match fullscreen_type {
-      Some(FullscreenType::Exclusive) => Some(Fullscreen::Exclusive(video_mode.unwrap())),
-      Some(FullscreenType::Borderless) => Some(Fullscreen::Borderless(None)),
-      _ => None,
-    };
+        let fs = match fullscreen_type {
+          Some(FullscreenType::Exclusive) => Some(Fullscreen::Exclusive(video_mode.unwrap())),
+          Some(FullscreenType::Borderless) => Some(Fullscreen::Borderless(None)),
+          _ => None,
+        };
 
-    self.window.set_fullscreen(fs);
+        window.set_fullscreen(fs);
+      }
+    }
+  }
+
+  #[napi]
+  /// Closes the window by hiding it. Note: This hides the window rather than closing it completely,
+  /// as tao requires the event loop to handle window closing. Use this when you want to
+  /// close a specific window (like a login window) and potentially reopen it later.
+  pub fn close(&self) {
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let client_ref = ipc_client.borrow();
+        if let Some(client) = client_ref.as_ref() {
+          let _ = client.send_request_async(ipc::IpcRequest::SetWindowVisible {
+            window_id: self.id,
+            visible: false,
+          });
+        }
+      }
+    } else if let Some(window) = &self.window {
+      window.set_visible(false);
+    }
+  }
+
+  #[napi]
+  /// Hides the window without destroying it.
+  pub fn hide(&self) {
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let client_ref = ipc_client.borrow();
+        if let Some(client) = client_ref.as_ref() {
+          let _ = client.send_request_async(ipc::IpcRequest::SetWindowVisible {
+            window_id: self.id,
+            visible: false,
+          });
+        }
+      }
+    } else if let Some(window) = &self.window {
+      window.set_visible(false);
+    }
+  }
+
+  #[napi]
+  /// Shows the window if it was hidden.
+  pub fn show(&self) {
+    if self.is_ipc_mode() {
+      // Modo IPC: enviar solicitud
+      if let Some(ipc_client) = &self.ipc_client {
+        let client_ref = ipc_client.borrow();
+        if let Some(client) = client_ref.as_ref() {
+          let _ = client.send_request_async(ipc::IpcRequest::SetWindowVisible {
+            window_id: self.id,
+            visible: true,
+          });
+        }
+      }
+    } else if let Some(window) = &self.window {
+      window.set_visible(true);
+    }
   }
 }

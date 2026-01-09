@@ -24,18 +24,19 @@
     "index.js"
   ],
   "napi": {
-    "name": "webview",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "i686-pc-windows-msvc",
-        "aarch64-apple-darwin",
-        "aarch64-linux-android",
-        "x86_64-unknown-freebsd",
-        "aarch64-pc-windows-msvc",
-        "armv7-linux-androideabi"
-      ]
-    }
+    "binaryName": "webview",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "i686-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-linux-android",
+      "armv7-linux-androideabi",
+      "x86_64-unknown-freebsd"
+    ]
   },
   "engines": {
     "node": ">= 10"
@@ -95,5 +96,5 @@
     "tabWidth": 2,
     "useTabs": false
   },
-  "packageManager": "yarn@4.5.0"
+  "packageManager": "bun@1.1.0"
 }
