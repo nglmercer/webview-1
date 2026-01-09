@@ -4,29 +4,20 @@
 //! Webview N-API Bindings
 //!
 //! This library provides N-API bindings for using tao and wry
-//! in Node.js applications.
+//! in Node.js applications. All methods, APIs, enums, and types are exported
+//! directly for Node.js composition.
 
 use napi::Result;
 use napi_derive::napi;
 
-// Application modules
-pub mod application;
-pub mod browser_window;
-pub mod event_loop;
-pub mod events;
+// Core modules
 pub mod types;
-pub mod webview;
 
-// Private modules
-mod utils;
+// Private utilities
+pub mod utils;
 
-/// Returns the webview version
-#[napi]
-pub fn get_webview_version() -> Result<String> {
-  wry::webview_version().map_err(|e| {
-    napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("Failed to get webview version: {}", e),
-    )
-  })
-}
+// Wry bindings
+pub mod wry;
+
+// Tao bindings
+pub mod tao;
