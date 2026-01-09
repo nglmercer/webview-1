@@ -815,31 +815,21 @@ export declare const enum StartCause {
   Init = 4
 }
 
-/** Returns the current version of the tao crate. */
-export declare function taoVersion(): string
-
-/** Theme for the webview. */
-export declare const enum Theme {
-  /** Light theme. */
-  Light = 0,
-  /** Dark theme. */
-  Dark = 1,
-  /** System theme. */
-  Auto = 2
-}
-
 /** Window theme. */
-export declare const enum Theme {
+export declare const enum TaoTheme {
   /** Light theme. */
   Light = 0,
   /** Dark theme. */
   Dark = 1
 }
 
+/** Returns the current version of the tao crate. */
+export declare function taoVersion(): string
+
 /** Theme change details. */
 export interface ThemeChangeDetails {
   /** The new theme. */
-  newTheme: Theme
+  newTheme: TaoTheme
 }
 
 /** Touch event data. */
@@ -933,7 +923,7 @@ export interface WebViewAttributes {
   /** The icon of the webview. */
   icon?: Buffer
   /** The theme of the webview. */
-  theme?: Theme
+  theme?: WryTheme
   /** The user agent of the webview. */
   userAgent?: string
   /** Initialization scripts to run. */
@@ -978,7 +968,7 @@ export interface WindowAttributes {
   /** The icon of the window. */
   icon?: Buffer
   /** The theme of the window. */
-  theme?: Theme
+  theme?: TaoTheme
 }
 
 /** Window drag details. */
@@ -1076,7 +1066,7 @@ export interface WindowOptions {
   /** The icon of the window. */
   icon?: Buffer
   /** The theme of the window. */
-  theme?: Theme
+  theme?: TaoTheme
 }
 
 /** Window size limits. */
@@ -1089,4 +1079,14 @@ export interface WindowSizeConstraints {
   maxWidth?: number
   /** The maximum height. */
   maxHeight?: number
+}
+
+/** Theme for the webview. */
+export declare const enum WryTheme {
+  /** Light theme. */
+  Light = 0,
+  /** Dark theme. */
+  Dark = 1,
+  /** System theme. */
+  Auto = 2
 }
