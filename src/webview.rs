@@ -182,7 +182,7 @@ impl JsWebview {
     let ipc_state = Rc::new(RefCell::new(None::<FunctionRef<IpcMessage, ()>>));
     let ipc_state_clone = ipc_state.clone();
 
-    let env = env.clone();
+    let env = *env;
     let ipc_handler = move |req: Request<String>| {
       let callback: &RefCell<Option<FunctionRef<IpcMessage, ()>>> = ipc_state_clone.borrow();
       let callback = callback.borrow();
@@ -212,9 +212,7 @@ impl JsWebview {
           uri: req.uri().to_string(),
         };
 
-        match on_ipc_msg.call(ipc_message) {
-          _ => {}
-        };
+        let _ = on_ipc_msg.call(ipc_message);
       }
     };
 

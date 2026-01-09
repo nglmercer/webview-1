@@ -9,6 +9,10 @@ version = "0.1.0"
 [lib]
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "eventloop"
+path = "src/bin/eventloop.rs"
+
 [dependencies]
 napi        = { version = "3.8.2", default-features = true, features = ["napi9"] }
 napi-derive = "3.5.1"

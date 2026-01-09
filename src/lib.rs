@@ -115,6 +115,8 @@ pub struct Application {
   ipc_client: Rc<RefCell<Option<ipc::IpcClient>>>,
   /// Whether to use IPC mode (non-blocking)
   use_ipc: bool,
+  /// Pointer to the eventloop process (only used in IPC mode)
+  _eventloop_process: Option<*mut eventloop_process::EventloopProcess>,
 }
 
 #[napi]
@@ -138,6 +140,7 @@ impl Application {
       open_windows: Rc::new(RefCell::new(HashSet::new())),
       ipc_client: Rc::new(RefCell::new(None)),
       use_ipc: false,
+      _eventloop_process: None,
     })
   }
 
@@ -154,7 +157,7 @@ impl Application {
       )
     })?;
 
-    let port = eventloop_process.ipc_port().ok_or_else(|| {
+    let _port = eventloop_process.ipc_port().ok_or_else(|| {
       napi::Error::new(
         napi::Status::GenericFailure,
         "Failed to get IPC port from eventloop process",
@@ -162,12 +165,16 @@ impl Application {
     })?;
 
     // Conectar al proceso del eventloop
-    let ipc_client = ipc::IpcClient::connect(port).map_err(|e| {
+    let ipc_client = eventloop_process.connect_ipc().map_err(|e| {
       napi::Error::new(
         napi::Status::GenericFailure,
         format!("Failed to connect to eventloop process: {}", e),
       )
     })?;
+
+    // Convertir el proceso a Box y guardarlo en un Rc para mantenerlo vivo
+    let eventloop_process = Box::new(eventloop_process);
+    let eventloop_process_ptr = Box::into_raw(eventloop_process);
 
     Ok(Self {
       event_loop: None, // No eventloop directo en modo IPC
@@ -183,6 +190,7 @@ impl Application {
       open_windows: Rc::new(RefCell::new(HashSet::new())),
       ipc_client: Rc::new(RefCell::new(Some(ipc_client))),
       use_ipc: true,
+      _eventloop_process: Some(eventloop_process_ptr),
     })
   }
 
@@ -348,6 +356,18 @@ impl Application {
         let request = ipc::IpcRequest::Exit;
         let _ = client.send_request_async(request);
       }
+
+      // Esperar un momento para que el proceso del eventloop se cierre
+      std::thread::sleep(std::time::Duration::from_millis(500));
+
+      // Cerrar el proceso del eventloop
+      if let Some(ptr) = self._eventloop_process {
+        unsafe {
+          if !ptr.is_null() {
+            let _ = Box::from_raw(ptr).stop();
+          }
+        }
+      }
     }
 
     *self.should_exit.borrow_mut() = true;
@@ -434,6 +454,21 @@ impl Application {
       }
 
       Ok(())
+    }
+  }
+}
+
+impl Drop for Application {
+  fn drop(&mut self) {
+    // Asegurarse de cerrar el proceso del eventloop en modo IPC
+    if self.use_ipc {
+      if let Some(ptr) = self._eventloop_process {
+        unsafe {
+          if !ptr.is_null() {
+            let _ = Box::from_raw(ptr).stop();
+          }
+        }
+      }
     }
   }
 }

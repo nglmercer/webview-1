@@ -141,7 +141,7 @@ impl IpcClient {
     self
       .request_sender
       .send((request_id, request))
-      .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+      .map_err(io::Error::other)?;
 
     // Esperar respuesta con timeout
     let start = std::time::Instant::now();
@@ -179,7 +179,7 @@ impl IpcClient {
     self
       .request_sender
       .send((request_id, request))
-      .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+      .map_err(io::Error::other)?;
     Ok(())
   }
 
@@ -215,7 +215,13 @@ pub enum IpcEvent {
 impl IpcServer {
   /// Crea un nuevo servidor IPC en un puerto disponible
   pub fn new() -> io::Result<Self> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
+    Self::new_with_port(0)
+  }
+
+  /// Crea un nuevo servidor IPC en el puerto especificado
+  /// Si el puerto es 0, se asigna un puerto disponible automáticamente
+  pub fn new_with_port(port: u16) -> io::Result<Self> {
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))?;
     listener.set_nonblocking(true)?;
 
     let (event_sender, _event_receiver) = mpsc::channel();
