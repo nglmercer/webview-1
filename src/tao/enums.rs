@@ -2,8 +2,9 @@
 //!
 //! This module contains all enums from the tao crate.
 
-use napi::bindgen_prelude::*;
 use napi_derive::napi;
+
+use crate::tao::structs::MonitorInfo;
 
 /// Control flow of the application event loop.
 #[napi]
@@ -344,7 +345,7 @@ pub enum CursorIcon {
 }
 
 /// Window theme.
-#[napi]
+#[napi(js_name = "TaoTheme")]
 pub enum Theme {
   /// Light theme.
   Light,
@@ -379,4 +380,257 @@ pub enum ImeState {
   Disabled,
   /// IME is enabled.
   Enabled,
+}
+
+/// External error type.
+#[napi]
+pub enum ExternalError {
+  /// Not supported error.
+  NotSupported,
+  /// OS error.
+  Os(String),
+}
+
+/// Device event type.
+#[napi]
+pub enum DeviceEvent {
+  /// Mouse motion.
+  MouseMotion { delta_x: f64, delta_y: f64 },
+  /// Mouse button event.
+  MouseButton {
+    button: u16,
+    state: MouseButtonState,
+  },
+  /// Key event.
+  Key {
+    key_code: u32,
+    state: MouseButtonState,
+  },
+}
+
+/// Element state for input devices.
+#[napi]
+pub enum ElementState {
+  Pressed,
+  Released,
+}
+
+/// Force touch/pen pressure.
+#[napi]
+pub enum Force {
+  Calibrated { force: f64, stage: u32 },
+  Normalized(f64),
+}
+
+/// Mouse scroll delta.
+#[napi]
+pub enum MouseScrollDelta {
+  LineDelta(u32, u32),
+  PixelDelta(f64, f64),
+}
+
+/// Start cause of the event loop.
+#[napi]
+pub enum StartCause {
+  Wait,
+  WaitCancelled,
+  Poll,
+  ResumeCancelled,
+  Init,
+}
+
+/// Touch phase.
+#[napi]
+pub enum TouchPhase {
+  Started,
+  Moved,
+  Ended,
+  Cancelled,
+}
+
+/// Device event filter.
+#[napi]
+pub enum DeviceEventFilter {
+  Allow,
+  AllowRepeated,
+  Ignore,
+}
+
+/// Key code.
+#[napi]
+pub enum KeyCode {
+  Key1,
+  Key2,
+  Key3,
+  Key4,
+  Key5,
+  Key6,
+  Key7,
+  Key8,
+  Key9,
+  Key0,
+  A,
+  B,
+  C,
+  D,
+  E,
+  F,
+  G,
+  H,
+  I,
+  J,
+  K,
+  L,
+  M,
+  N,
+  O,
+  P,
+  Q,
+  R,
+  S,
+  T,
+  U,
+  V,
+  W,
+  X,
+  Y,
+  Z,
+  Escape,
+  F1,
+  F2,
+  F3,
+  F4,
+  F5,
+  F6,
+  F7,
+  F8,
+  F9,
+  F10,
+  F11,
+  F12,
+  F13,
+  F14,
+  F15,
+  F16,
+  F17,
+  F18,
+  F19,
+  F20,
+  F21,
+  F22,
+  F23,
+  F24,
+  Snapshot,
+  Scroll,
+  Pause,
+  Insert,
+  Home,
+  Delete,
+  End,
+  PageDown,
+  PageUp,
+  Left,
+  Up,
+  Right,
+  Down,
+  Backspace,
+  Enter,
+  Space,
+  Compose,
+  CapsLock,
+  Numlock,
+  Numpad0,
+  Numpad1,
+  Numpad2,
+  Numpad3,
+  Numpad4,
+  Numpad5,
+  Numpad6,
+  Numpad7,
+  Numpad8,
+  Numpad9,
+  NumpadAdd,
+  NumpadDivide,
+  NumpadDecimal,
+  NumpadEnter,
+  NumpadEquals,
+  NumpadMultiply,
+  NumpadSubtract,
+  Apostrophe,
+  Comma,
+  Equal,
+  Grave,
+  LAlt,
+  LBracket,
+  LControl,
+  LShift,
+  LWin,
+  Period,
+  RAlt,
+  RBracket,
+  RControl,
+  RShift,
+  RWin,
+  Semicolon,
+  Slash,
+  Backslash,
+  NonUsBackslash,
+  Tab,
+}
+
+/// Key location on the keyboard.
+#[napi]
+pub enum KeyLocation {
+  Standard,
+  Left,
+  Right,
+  Numpad,
+}
+
+/// Bad icon error.
+#[napi]
+pub enum BadIcon {
+  /// No icon data provided.
+  NoData,
+  /// Icon data is too large.
+  TooLarge,
+  /// Icon format is invalid.
+  Format,
+}
+
+/// Fullscreen mode.
+#[napi]
+pub enum Fullscreen {
+  Exclusive(MonitorInfo),
+  Borderless(Option<MonitorInfo>),
+}
+
+/// Progress state for progress bar.
+#[napi]
+pub enum ProgressState {
+  None,
+  Normal,
+  Indeterminate,
+  Paused,
+  Error,
+}
+
+/// Resize direction for window resizing.
+#[napi]
+pub enum ResizeDirection {
+  East,
+  North,
+  Northeast,
+  Northwest,
+  South,
+  Southeast,
+  Southwest,
+  West,
+}
+
+/// User attention type.
+#[napi]
+pub enum UserAttentionType {
+  Critical,
+  Informational,
 }

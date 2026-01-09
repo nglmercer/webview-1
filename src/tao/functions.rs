@@ -2,7 +2,6 @@
 //!
 //! This module contains all functions from the tao crate.
 
-use napi::Result;
 use napi_derive::napi;
 
 use crate::tao::structs::MonitorInfo;
@@ -10,7 +9,7 @@ use crate::tao::structs::MonitorInfo;
 /// Returns the current version of the tao crate.
 #[napi]
 pub fn tao_version() -> String {
-  tao::VERSION.into()
+  "0.34.5".to_string()
 }
 
 /// Returns the primary monitor information.

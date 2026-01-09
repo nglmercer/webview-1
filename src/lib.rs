@@ -7,15 +7,6 @@
 //! in Node.js applications. All methods, APIs, enums, and types are exported
 //! directly for Node.js composition.
 
-use napi::Result;
-use napi_derive::napi;
-
-// Core modules
-pub mod types;
-
-// Private utilities
-pub mod utils;
-
 // Wry bindings
 pub mod wry;
 

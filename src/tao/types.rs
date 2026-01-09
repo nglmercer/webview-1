@@ -8,7 +8,16 @@ use napi::Result as NapiResult;
 pub type Result<T> = NapiResult<T>;
 
 /// Unique identifier for a window.
-pub type WindowId = u64;
+pub type WindowId = u32;
 
 /// Device identifier.
 pub type DeviceId = u32;
+
+/// Axis identifier for scroll events.
+pub type AxisId = u32;
+
+/// Button identifier for mouse events.
+pub type ButtonId = u32;
+
+/// RGBA color type for icons and other pixel data.
+pub type RGBA = [u8; 4];

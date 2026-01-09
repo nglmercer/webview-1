@@ -5,7 +5,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::wry::enums::{DragDropEvent, PageLoadEvent, Theme};
+use crate::wry::enums::Theme as WryTheme;
 
 /// An initialization script to be run when creating a webview.
 #[napi(object)]
@@ -49,11 +49,11 @@ pub struct NewWindowOpener {
   /// The label of the opener webview.
   pub label: String,
   /// The native ID of the opener webview.
-  pub native_id: u64,
+  pub native_id: u32,
 }
 
 /// A proxy endpoint for web content.
-#[napi]
+#[napi(object)]
 pub struct ProxyEndpoint {
   /// The host of the proxy.
   pub host: String,
@@ -86,7 +86,7 @@ pub struct RequestAsyncResponder {
 }
 
 /// The web context for a webview.
-#[napi]
+#[napi(object)]
 pub struct WebContext {
   /// The URL that is currently being navigated to.
   pub url: Option<String>,
@@ -97,10 +97,10 @@ pub struct WebContext {
 }
 
 /// The main webview struct.
-#[napi]
+#[napi(object)]
 pub struct WebView {
   /// The native ID of the webview.
-  pub id: u64,
+  pub id: u32,
   /// The label of the webview.
   pub label: String,
 }
@@ -143,7 +143,7 @@ pub struct WebViewAttributes {
   /// The icon of the webview.
   pub icon: Option<Buffer>,
   /// The theme of the webview.
-  pub theme: Option<Theme>,
+  pub theme: Option<WryTheme>,
   /// The user agent of the webview.
   pub user_agent: Option<String>,
   /// Initialization scripts to run.
@@ -152,13 +152,4 @@ pub struct WebViewAttributes {
   pub drag_drop: bool,
   /// The background color of the webview.
   pub background_color: Option<Buffer>,
-}
-
-/// Builder for creating a webview.
-#[napi]
-pub struct WebViewBuilder {
-  /// The attributes for the webview.
-  pub attributes: WebViewAttributes,
-  /// The web context.
-  pub context: Option<WebContext>,
 }

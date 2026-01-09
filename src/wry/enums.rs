@@ -2,7 +2,6 @@
 //!
 //! This module contains all enums from the wry crate.
 
-use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 /// Background throttling policy for webviews.
@@ -84,7 +83,7 @@ pub enum ProxyConfig {
 }
 
 /// Theme for the webview.
-#[napi]
+#[napi(js_name = "WryTheme")]
 pub enum Theme {
   /// Light theme.
   Light,

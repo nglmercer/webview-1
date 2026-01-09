@@ -6,9 +6,21 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 use crate::tao::enums::{
-  CursorIcon, FullscreenType, ModifiersState, MouseButton, MouseButtonState, Theme, WindowLevel,
-  WindowEvent,
+  CursorIcon, ModifiersState, MouseButton, MouseButtonState, Theme as TaoTheme, WindowEvent,
 };
+
+/// Forward declaration for MonitorInfo to avoid circular dependencies
+#[napi(object)]
+pub struct MonitorInfo {
+  /// The name of the monitor.
+  pub name: Option<String>,
+  /// The size of the monitor.
+  pub size: Size,
+  /// The position of the monitor.
+  pub position: Position,
+  /// The scale factor of the monitor.
+  pub scale_factor: f64,
+}
 
 /// 2D position.
 #[napi(object)]
@@ -69,12 +81,12 @@ pub struct WindowOptions {
   /// The icon of the window.
   pub icon: Option<Buffer>,
   /// The theme of the window.
-  pub theme: Option<Theme>,
+  pub theme: Option<TaoTheme>,
 }
 
 /// Window size limits.
 #[napi(object)]
-pub struct WindowSizeLimits {
+pub struct WindowSizeConstraints {
   /// The minimum width.
   pub min_width: Option<u32>,
   /// The minimum height.
@@ -122,15 +134,28 @@ pub struct KeyboardEvent {
   pub modifiers: ModifiersState,
 }
 
+/// Raw keyboard event data.
+#[napi(object)]
+pub struct RawKeyEvent {
+  /// The key code.
+  pub key_code: u32,
+  /// The key state.
+  pub state: MouseButtonState,
+  /// The modifiers state.
+  pub modifiers: ModifiersState,
+}
+
 /// Touch event data.
 #[napi(object)]
-pub struct TouchEvent {
+pub struct Touch {
   /// The touch identifier.
-  pub id: u64,
+  pub id: u32,
   /// The position of the touch.
   pub position: Position,
   /// The force of the touch.
-  pub force: f64,
+  pub force: Option<f64>,
+  /// The device ID.
+  pub device_id: u32,
 }
 
 /// Gesture event data.
@@ -150,20 +175,7 @@ pub struct WindowEventData {
   /// The window event type.
   pub event: WindowEvent,
   /// The window ID.
-  pub window_id: u64,
-}
-
-/// Monitor information.
-#[napi(object)]
-pub struct MonitorInfo {
-  /// The name of the monitor.
-  pub name: Option<String>,
-  /// The size of the monitor.
-  pub size: Size,
-  /// The position of the monitor.
-  pub position: Position,
-  /// The scale factor of the monitor.
-  pub scale_factor: f64,
+  pub window_id: u32,
 }
 
 /// HiDPI scaling information.
@@ -179,7 +191,7 @@ pub struct HiDpiScaling {
 #[napi(object)]
 pub struct ThemeChangeDetails {
   /// The new theme.
-  pub new_theme: Theme,
+  pub new_theme: TaoTheme,
 }
 
 /// Cursor icon change details.
@@ -211,14 +223,95 @@ pub struct ResizeDetails {
 #[napi(object)]
 pub struct WindowDragOptions {
   /// The window to drag.
-  pub window_id: u64,
+  pub window_id: u32,
 }
 
 /// Window jump options.
 #[napi(object)]
 pub struct WindowJumpOptions {
   /// The window to jump.
-  pub window_id: u64,
+  pub window_id: u32,
   /// The options to pass.
   pub options: Option<WindowOptions>,
+}
+
+/// Not supported error.
+#[napi(object)]
+pub struct NotSupportedError {
+  /// The error message.
+  pub message: String,
+}
+
+/// OS error.
+#[napi(object)]
+pub struct OsError {
+  /// The OS error code.
+  pub code: i32,
+  /// The error message.
+  pub message: String,
+}
+
+/// Video mode information.
+#[napi(object)]
+pub struct VideoMode {
+  /// The size of the video mode.
+  pub size: Size,
+  /// The bit depth.
+  pub bit_depth: u16,
+  /// The refresh rate.
+  pub refresh_rate: u32,
+}
+
+/// Window attributes.
+#[napi(object)]
+pub struct WindowAttributes {
+  /// The title of the window.
+  pub title: String,
+  /// The width of the window.
+  pub width: u32,
+  /// The height of the window.
+  pub height: u32,
+  /// The X position of the window.
+  pub x: Option<f64>,
+  /// The Y position of the window.
+  pub y: Option<f64>,
+  /// Whether the window is resizable.
+  pub resizable: bool,
+  /// Whether the window has decorations.
+  pub decorations: bool,
+  /// Whether the window is always on top.
+  pub always_on_top: bool,
+  /// Whether the window is visible.
+  pub visible: bool,
+  /// Whether the window is transparent.
+  pub transparent: bool,
+  /// Whether the window is maximized.
+  pub maximized: bool,
+  /// Whether the window is focused.
+  pub focused: bool,
+  /// Whether the window has a menubar.
+  pub menubar: bool,
+  /// The icon of the window.
+  pub icon: Option<Buffer>,
+  /// The theme of the window.
+  pub theme: Option<TaoTheme>,
+}
+/// Progress bar state and progress.
+#[napi(object)]
+pub struct ProgressBarState {
+  /// The progress state.
+  pub state: String,
+  /// The progress value (0-100).
+  pub progress: u32,
+}
+
+/// Icon data.
+#[napi(object)]
+pub struct Icon {
+  /// The width of the icon.
+  pub width: u32,
+  /// The height of the icon.
+  pub height: u32,
+  /// The RGBA pixel data.
+  pub rgba: Buffer,
 }
