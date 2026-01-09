@@ -2,6 +2,7 @@
 //!
 //! This module contains all enums from the wry crate.
 
+use napi::{Error as NapiError, Status};
 use napi_derive::napi;
 
 /// Background throttling policy for webviews.
@@ -91,4 +92,21 @@ pub enum Theme {
   Dark,
   /// System theme.
   Auto,
+}
+
+impl Error {
+  /// Converts the error to a N-API error.
+  pub fn to_js_error(&self) -> NapiError {
+    let message = match self {
+      Error::Uninitialized => "The webview was not initialized".to_string(),
+      Error::AlreadyDestroyed => "The webview has already been destroyed".to_string(),
+      Error::ScriptCallFailed => "The script call failed".to_string(),
+      Error::Ipc => "An IPC error occurred".to_string(),
+      Error::InvalidWebview => "The webview is invalid".to_string(),
+      Error::InvalidUrl => "The URL is invalid".to_string(),
+      Error::Unsupported => "The operation is not supported on this platform".to_string(),
+      Error::InvalidIcon => "The icon is invalid".to_string(),
+    };
+    NapiError::new(Status::GenericFailure, message)
+  }
 }

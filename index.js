@@ -576,6 +576,15 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.EventLoop = nativeBinding.EventLoop
+module.exports.EventLoopBuilder = nativeBinding.EventLoopBuilder
+module.exports.EventLoopProxy = nativeBinding.EventLoopProxy
+module.exports.EventLoopWindowTarget = nativeBinding.EventLoopWindowTarget
+module.exports.WebContext = nativeBinding.WebContext
+module.exports.WebView = nativeBinding.WebView
+module.exports.WebViewBuilder = nativeBinding.WebViewBuilder
+module.exports.Window = nativeBinding.Window
+module.exports.WindowBuilder = nativeBinding.WindowBuilder
 module.exports.availableMonitors = nativeBinding.availableMonitors
 module.exports.BackgroundThrottlingPolicy = nativeBinding.BackgroundThrottlingPolicy
 module.exports.BadIcon = nativeBinding.BadIcon

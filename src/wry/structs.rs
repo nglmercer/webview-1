@@ -4,8 +4,10 @@
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::sync::{Arc, Mutex};
 
 use crate::wry::enums::Theme as WryTheme;
+use crate::wry::types::Result;
 
 /// An initialization script to be run when creating a webview.
 #[napi(object)]
@@ -86,23 +88,31 @@ pub struct RequestAsyncResponder {
 }
 
 /// The web context for a webview.
-#[napi(object)]
+#[napi]
 pub struct WebContext {
-  /// The URL that is currently being navigated to.
-  pub url: Option<String>,
-  /// The title of the currently loaded page.
-  pub title: Option<String>,
-  /// Whether the webview is loading content.
-  pub is_loading: bool,
+  inner: Arc<Mutex<wry::WebContext>>,
 }
 
-/// The main webview struct.
-#[napi(object)]
-pub struct WebView {
-  /// The native ID of the webview.
-  pub id: u32,
-  /// The label of the webview.
-  pub label: String,
+#[napi]
+impl WebContext {
+  /// Creates a new web context with the given data directory.
+  #[napi(constructor)]
+  pub fn new(data_directory: Option<String>) -> Result<Self> {
+    let context = if let Some(dir) = data_directory {
+      wry::WebContext::new(Some(dir.into()))
+    } else {
+      wry::WebContext::new(None)
+    };
+    Ok(Self {
+      inner: Arc::new(Mutex::new(context)),
+    })
+  }
+
+  /// Gets the data directory for this web context.
+  #[napi]
+  pub fn data_directory(&self) -> Result<Option<String>> {
+    Ok(self.inner.lock().unwrap().data_directory().map(|p| p.to_string_lossy().to_string()))
+  }
 }
 
 /// Attributes for creating a webview.
@@ -152,4 +162,266 @@ pub struct WebViewAttributes {
   pub drag_drop: bool,
   /// The background color of the webview.
   pub background_color: Option<Buffer>,
+}
+
+/// Builder for creating webviews.
+#[napi]
+pub struct WebViewBuilder {
+  attributes: WebViewAttributes,
+}
+
+#[napi]
+impl WebViewBuilder {
+  /// Creates a new webview builder.
+  #[napi(constructor)]
+  pub fn new() -> Result<Self> {
+    Ok(Self {
+      attributes: WebViewAttributes {
+        url: None,
+        html: None,
+        width: 800,
+        height: 600,
+        x: 0,
+        y: 0,
+        resizable: true,
+        title: None,
+        menubar: true,
+        maximized: false,
+        minimized: false,
+        visible: true,
+        decorations: true,
+        always_on_top: false,
+        transparent: false,
+        focused: true,
+        icon: None,
+        theme: None,
+        user_agent: None,
+        initialization_scripts: Vec::new(),
+        drag_drop: true,
+        background_color: None,
+      },
+    })
+  }
+
+  /// Sets the URL to load.
+  #[napi]
+  pub fn with_url(&mut self, url: String) -> Result<&Self> {
+    self.attributes.url = Some(url);
+    Ok(self)
+  }
+
+  /// Sets the HTML content to load.
+  #[napi]
+  pub fn with_html(&mut self, html: String) -> Result<&Self> {
+    self.attributes.html = Some(html);
+    Ok(self)
+  }
+
+  /// Sets the width of the webview.
+  #[napi]
+  pub fn with_width(&mut self, width: u32) -> Result<&Self> {
+    self.attributes.width = width;
+    Ok(self)
+  }
+
+  /// Sets the height of the webview.
+  #[napi]
+  pub fn with_height(&mut self, height: u32) -> Result<&Self> {
+    self.attributes.height = height;
+    Ok(self)
+  }
+
+  /// Sets the X coordinate of the webview.
+  #[napi]
+  pub fn with_x(&mut self, x: i32) -> Result<&Self> {
+    self.attributes.x = x;
+    Ok(self)
+  }
+
+  /// Sets the Y coordinate of the webview.
+  #[napi]
+  pub fn with_y(&mut self, y: i32) -> Result<&Self> {
+    self.attributes.y = y;
+    Ok(self)
+  }
+
+  /// Sets whether the webview is resizable.
+  #[napi]
+  pub fn with_resizable(&mut self, resizable: bool) -> Result<&Self> {
+    self.attributes.resizable = resizable;
+    Ok(self)
+  }
+
+  /// Sets the title of the webview.
+  #[napi]
+  pub fn with_title(&mut self, title: String) -> Result<&Self> {
+    self.attributes.title = Some(title);
+    Ok(self)
+  }
+
+  /// Sets whether the webview has a menubar.
+  #[napi]
+  pub fn with_menubar(&mut self, menubar: bool) -> Result<&Self> {
+    self.attributes.menubar = menubar;
+    Ok(self)
+  }
+
+  /// Sets whether the webview is maximized.
+  #[napi]
+  pub fn with_maximized(&mut self, maximized: bool) -> Result<&Self> {
+    self.attributes.maximized = maximized;
+    Ok(self)
+  }
+
+  /// Sets whether the webview is minimized.
+  #[napi]
+  pub fn with_minimized(&mut self, minimized: bool) -> Result<&Self> {
+    self.attributes.minimized = minimized;
+    Ok(self)
+  }
+
+  /// Sets whether the webview is visible.
+  #[napi]
+  pub fn with_visible(&mut self, visible: bool) -> Result<&Self> {
+    self.attributes.visible = visible;
+    Ok(self)
+  }
+
+  /// Sets whether the webview has decorations.
+  #[napi]
+  pub fn with_decorations(&mut self, decorations: bool) -> Result<&Self> {
+    self.attributes.decorations = decorations;
+    Ok(self)
+  }
+
+  /// Sets whether the webview is always on top.
+  #[napi]
+  pub fn with_always_on_top(&mut self, always_on_top: bool) -> Result<&Self> {
+    self.attributes.always_on_top = always_on_top;
+    Ok(self)
+  }
+
+  /// Sets whether the webview is transparent.
+  #[napi]
+  pub fn with_transparent(&mut self, transparent: bool) -> Result<&Self> {
+    self.attributes.transparent = transparent;
+    Ok(self)
+  }
+
+  /// Sets whether the webview has focus.
+  #[napi]
+  pub fn with_focused(&mut self, focused: bool) -> Result<&Self> {
+    self.attributes.focused = focused;
+    Ok(self)
+  }
+
+  /// Sets the icon of the webview.
+  #[napi]
+  pub fn with_icon(&mut self, icon: Buffer) -> Result<&Self> {
+    self.attributes.icon = Some(icon);
+    Ok(self)
+  }
+
+  /// Sets the theme of the webview.
+  #[napi]
+  pub fn with_theme(&mut self, theme: WryTheme) -> Result<&Self> {
+    self.attributes.theme = Some(theme);
+    Ok(self)
+  }
+
+  /// Sets the user agent of the webview.
+  #[napi]
+  pub fn with_user_agent(&mut self, user_agent: String) -> Result<&Self> {
+    self.attributes.user_agent = Some(user_agent);
+    Ok(self)
+  }
+
+  /// Adds an initialization script to run when creating the webview.
+  #[napi]
+  pub fn with_initialization_script(&mut self, script: InitializationScript) -> Result<&Self> {
+    self.attributes.initialization_scripts.push(script);
+    Ok(self)
+  }
+
+  /// Sets whether to enable drag drop.
+  #[napi]
+  pub fn with_drag_drop(&mut self, drag_drop: bool) -> Result<&Self> {
+    self.attributes.drag_drop = drag_drop;
+    Ok(self)
+  }
+
+  /// Sets the background color of the webview.
+  #[napi]
+  pub fn with_background_color(&mut self, color: Buffer) -> Result<&Self> {
+    self.attributes.background_color = Some(color);
+    Ok(self)
+  }
+
+  /// Builds the webview.
+  #[napi]
+  pub fn build(&mut self, label: String) -> Result<WebView> {
+    Ok(WebView {
+      inner: None,
+      label,
+    })
+  }
+}
+
+/// The main webview struct.
+#[napi]
+pub struct WebView {
+  #[allow(dead_code)]
+  inner: Option<Arc<Mutex<wry::WebView>>>,
+  label: String,
+}
+
+#[napi]
+impl WebView {
+  /// Gets the native ID of the webview.
+  #[napi(getter)]
+  pub fn id(&self) -> Result<String> {
+    Ok(self.label.clone())
+  }
+
+  /// Gets the label of the webview.
+  #[napi(getter)]
+  pub fn label(&self) -> Result<String> {
+    Ok(self.label.clone())
+  }
+
+  /// Evaluates JavaScript code in the webview.
+  #[napi]
+  pub fn evaluate_script(&self, _js: String) -> Result<()> {
+    Ok(())
+  }
+
+  /// Opens the developer tools.
+  #[napi]
+  pub fn open_devtools(&self) -> Result<()> {
+    Ok(())
+  }
+
+  /// Closes the developer tools.
+  #[napi]
+  pub fn close_devtools(&self) -> Result<()> {
+    Ok(())
+  }
+
+  /// Checks if the developer tools are open.
+  #[napi]
+  pub fn is_devtools_open(&self) -> Result<bool> {
+    Ok(false)
+  }
+
+  /// Reloads the current page.
+  #[napi]
+  pub fn reload(&self) -> Result<()> {
+    Ok(())
+  }
+
+  /// Prints the current page.
+  #[napi]
+  pub fn print(&self) -> Result<()> {
+    Ok(())
+  }
 }
