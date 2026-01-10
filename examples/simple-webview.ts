@@ -75,7 +75,7 @@ async function main() {
       .withX(100)
       .withY(100)
       .withResizable(true)
-      .withDecorations(true)
+      .withDecorated(true)
       .withVisible(true)
       .withFocused(true)
       .withMenubar(true)
@@ -104,9 +104,11 @@ async function main() {
     console.log('✓ DevTools cerrado')
     
     console.log('\n✓ Ejemplo de webview ejecutado correctamente')
-    console.log('\nNota: El webview se crea pero no se muestra visualmente')
-    console.log('      en este entorno de prueba. En una aplicación real,')
-    console.log('      usarías eventLoop.run() para mantener el webview abierto.')
+    console.log('\nIniciando event loop para mantener el webview abierto...')
+    console.log('Presiona Ctrl+C para cerrar el webview')
+    
+    // Ejecutar el event loop para mantener el webview abierto
+    eventLoop.run()
     
   } catch (error) {
     console.error('Error al ejecutar ejemplo:', error)

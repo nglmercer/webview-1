@@ -47,9 +47,11 @@ async function main() {
     console.log('✓ Focuseada:', window.isFocused())
     
     console.log('\n✓ Ejemplo de ventana ejecutado correctamente')
-    console.log('\nNota: La ventana se crea pero no se muestra visualmente')
-    console.log('      en este entorno de prueba. En una aplicación real,')
-    console.log('      usarías eventLoop.run() para mantener la ventana abierta.')
+    console.log('\nIniciando event loop para mantener la ventana abierta...')
+    console.log('Presiona Ctrl+C para cerrar la ventana')
+    
+    // Ejecutar el event loop para mantener la ventana abierta
+    eventLoop.run()
     
   } catch (error) {
     console.error('Error al ejecutar ejemplo:', error)

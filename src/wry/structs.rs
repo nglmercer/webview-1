@@ -168,6 +168,8 @@ pub struct WebViewAttributes {
 #[napi]
 pub struct WebViewBuilder {
   attributes: WebViewAttributes,
+  #[allow(dead_code)]
+  inner: Option<wry::WebViewBuilder<'static>>,
 }
 
 #[napi]
@@ -200,6 +202,7 @@ impl WebViewBuilder {
         drag_drop: true,
         background_color: None,
       },
+      inner: None,
     })
   }
 
@@ -289,7 +292,7 @@ impl WebViewBuilder {
 
   /// Sets whether the webview has decorations.
   #[napi]
-  pub fn with_decorations(&mut self, decorations: bool) -> Result<&Self> {
+  pub fn with_decorated(&mut self, decorations: bool) -> Result<&Self> {
     self.attributes.decorations = decorations;
     Ok(self)
   }
@@ -360,8 +363,52 @@ impl WebViewBuilder {
   /// Builds the webview.
   #[napi]
   pub fn build(&mut self, label: String) -> Result<WebView> {
+    // Create event loop and window for the webview
+    let event_loop = tao::event_loop::EventLoop::new();
+    let mut window_builder = tao::window::WindowBuilder::new()
+      .with_title(self.attributes.title.as_deref().unwrap_or("WebView"))
+      .with_inner_size(tao::dpi::LogicalSize::new(
+        self.attributes.width,
+        self.attributes.height,
+      ))
+      .with_resizable(self.attributes.resizable)
+      .with_decorations(self.attributes.decorations)
+      .with_always_on_top(self.attributes.always_on_top)
+      .with_visible(self.attributes.visible)
+      .with_transparent(self.attributes.transparent)
+      .with_maximized(self.attributes.maximized)
+      .with_focused(self.attributes.focused);
+
+    // Set position if provided
+    if self.attributes.x != 0 || self.attributes.y != 0 {
+      window_builder = window_builder.with_position(tao::dpi::LogicalPosition::new(
+        self.attributes.x,
+        self.attributes.y,
+      ));
+    }
+
+    // Build the window
+    let window = window_builder.build(&event_loop).map_err(|e| {
+      napi::Error::new(napi::Status::GenericFailure, format!("Failed to create window: {}", e))
+    })?;
+
+    // Create webview builder
+    let mut webview_builder = wry::WebViewBuilder::new();
+
+    // Set URL or HTML
+    if let Some(url) = &self.attributes.url {
+      webview_builder = webview_builder.with_url(url);
+    } else if let Some(html) = &self.attributes.html {
+      webview_builder = webview_builder.with_html(html);
+    }
+
+    // Build the webview
+    let webview = webview_builder.build(&window).map_err(|e| {
+      napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+    })?;
+
     Ok(WebView {
-      inner: None,
+      inner: Some(Arc::new(Mutex::new(webview))),
       label,
     })
   }
@@ -391,37 +438,56 @@ impl WebView {
 
   /// Evaluates JavaScript code in the webview.
   #[napi]
-  pub fn evaluate_script(&self, _js: String) -> Result<()> {
+  pub fn evaluate_script(&self, js: String) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      let _ = inner.lock().unwrap().evaluate_script(&js);
+    }
     Ok(())
   }
 
   /// Opens the developer tools.
   #[napi]
   pub fn open_devtools(&self) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      inner.lock().unwrap().open_devtools();
+    }
     Ok(())
   }
 
   /// Closes the developer tools.
   #[napi]
   pub fn close_devtools(&self) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      inner.lock().unwrap().close_devtools();
+    }
     Ok(())
   }
 
   /// Checks if the developer tools are open.
   #[napi]
   pub fn is_devtools_open(&self) -> Result<bool> {
-    Ok(false)
+    if let Some(inner) = &self.inner {
+      Ok(inner.lock().unwrap().is_devtools_open())
+    } else {
+      Ok(false)
+    }
   }
 
   /// Reloads the current page.
   #[napi]
   pub fn reload(&self) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      let _ = inner.lock().unwrap().reload();
+    }
     Ok(())
   }
 
   /// Prints the current page.
   #[napi]
   pub fn print(&self) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      let _ = inner.lock().unwrap().print();
+    }
     Ok(())
   }
 }

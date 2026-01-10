@@ -90,7 +90,7 @@ export declare class WebViewBuilder {
   /** Sets whether the webview is visible. */
   withVisible(visible: boolean): this
   /** Sets whether the webview has decorations. */
-  withDecorations(decorations: boolean): this
+  withDecorated(decorations: boolean): this
   /** Sets whether the webview is always on top. */
   withAlwaysOnTop(alwaysOnTop: boolean): this
   /** Sets whether the webview is transparent. */
@@ -118,7 +118,7 @@ export declare class Window {
   /** Creates a new window with default attributes. */
   constructor()
   /** Gets the window ID. */
-  get id(): number
+  get id(): bigint
   /** Gets the window title. */
   title(): string
   /** Sets the window title. */
@@ -1151,7 +1151,7 @@ export interface WindowAttributes {
   /** Whether window is resizable. */
   resizable: boolean
   /** Whether window has decorations. */
-  decorations: boolean
+  decorated: boolean
   /** Whether window is always on top. */
   alwaysOnTop: boolean
   /** Whether window is visible. */
