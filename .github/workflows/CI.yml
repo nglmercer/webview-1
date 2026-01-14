@@ -70,7 +70,7 @@ jobs:
           # Linux i686
           - os: ubuntu-latest
             target: i686-unknown-linux-gnu
-            sys_deps: gcc-multilib g++-ultilib pkg-config
+            sys_deps: gcc-multilib g++-multilib pkg-config
             cross_compile: true
             rust_target: i686-unknown-linux-gnu
             env_vars: |
@@ -204,8 +204,6 @@ jobs:
       - name: Build
         run: bun run build --target ${{ matrix.settings.target }}
         shell: bash
-        env:
-          ${{ matrix.settings.env_vars }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
