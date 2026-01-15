@@ -84,13 +84,17 @@ async function main() {
       console.log('Second listener received:', msg);
     });
 
-    setInterval(() => {
-      eventLoop.runIteration();
-      // Keep references alive
-      //@ts-ignore
-      window._keepAlive = true;
-      //@ts-ignore
-      webview._keepAlive = true;
+    const interval = setInterval(() => {
+      if (!eventLoop.runIteration()) {
+        clearInterval(interval);
+        process.exit(0);
+      }
+      
+      // Keep references alive by accessing a property
+      // This prevents the Garbage Collector from destroying the objects
+      // (and closing the windows) while the loop is running.
+      void window.id;
+      void webview.id;
     }, 10)
   } catch (error) {
     console.error('Error:', error)

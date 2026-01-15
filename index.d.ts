@@ -7,7 +7,7 @@ export declare class EventLoop {
   /** Runs the event loop. */
   run(): void
   /** Runs a single iteration of the event loop. */
-  runIteration(): void
+  runIteration(): boolean
   /** Creates an event loop proxy. */
   createProxy(): EventLoopProxy
 }

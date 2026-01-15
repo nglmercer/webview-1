@@ -345,8 +345,15 @@ impl EventLoop {
   #[napi]
   pub fn run(&mut self) -> Result<()> {
     if let Some(event_loop) = self.inner.take() {
-      event_loop.run(move |_, _, _| {
-        // Keep the event loop running
+      event_loop.run(move |event, _, control_flow| {
+        *control_flow = tao::event_loop::ControlFlow::Wait;
+        if let tao::event::Event::WindowEvent {
+          event: tao::event::WindowEvent::CloseRequested,
+          ..
+        } = event
+        {
+          *control_flow = tao::event_loop::ControlFlow::Exit;
+        }
       });
     }
     Ok(())
@@ -354,7 +361,8 @@ impl EventLoop {
 
   /// Runs a single iteration of the event loop.
   #[napi]
-  pub fn run_iteration(&mut self) -> Result<()> {
+  pub fn run_iteration(&mut self) -> Result<bool> {
+    let mut keep_running = true;
     if let Some(event_loop) = &mut self.inner {
       #[cfg(any(
         target_os = "linux",
@@ -369,13 +377,23 @@ impl EventLoop {
         use tao::platform::run_return::EventLoopExtRunReturn;
         event_loop.run_return(|event, _, control_flow| {
           *control_flow = tao::event_loop::ControlFlow::Wait;
-          if let tao::event::Event::RedrawEventsCleared = event {
-            *control_flow = tao::event_loop::ControlFlow::Exit;
+          match event {
+            tao::event::Event::WindowEvent {
+              event: tao::event::WindowEvent::CloseRequested,
+              ..
+            } => {
+              keep_running = false;
+              *control_flow = tao::event_loop::ControlFlow::Exit;
+            }
+            tao::event::Event::RedrawEventsCleared => {
+              *control_flow = tao::event_loop::ControlFlow::Exit;
+            }
+            _ => {}
           }
         });
       }
     }
-    Ok(())
+    Ok(keep_running)
   }
 
   /// Creates an event loop proxy.
