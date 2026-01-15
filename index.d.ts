@@ -109,6 +109,8 @@ export declare class WebViewBuilder {
   withDragDrop(dragDrop: boolean): this
   /** Sets the background color of the webview. */
   withBackgroundColor(color: Buffer): this
+  /** Builds the webview on an existing window. */
+  buildOnWindow(window: Window, label: string): WebView
   /** Builds the webview. */
   build(eventLoop: EventLoop, label: string): WebView
 }

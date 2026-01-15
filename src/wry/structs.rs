@@ -4,11 +4,12 @@
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Mutex;
 
+use crate::tao::structs::EventLoop;
 use crate::wry::enums::Theme as WryTheme;
 use crate::wry::types::Result;
-use crate::tao::structs::EventLoop;
 #[cfg(any(
   target_os = "linux",
   target_os = "dragonfly",
@@ -107,7 +108,7 @@ pub struct RequestAsyncResponder {
 /// The web context for a webview.
 #[napi]
 pub struct WebContext {
-  inner: Arc<Mutex<wry::WebContext>>,
+  inner: Rc<Mutex<wry::WebContext>>,
 }
 
 #[napi]
@@ -121,14 +122,21 @@ impl WebContext {
       wry::WebContext::new(None)
     };
     Ok(Self {
-      inner: Arc::new(Mutex::new(context)),
+      inner: Rc::new(Mutex::new(context)),
     })
   }
 
   /// Gets the data directory for this web context.
   #[napi]
   pub fn data_directory(&self) -> Result<Option<String>> {
-    Ok(self.inner.lock().unwrap().data_directory().map(|p| p.to_string_lossy().to_string()))
+    Ok(
+      self
+        .inner
+        .lock()
+        .unwrap()
+        .data_directory()
+        .map(|p| p.to_string_lossy().to_string()),
+    )
   }
 }
 
@@ -379,7 +387,11 @@ impl WebViewBuilder {
 
   /// Builds the webview on an existing window.
   #[napi]
-  pub fn build_on_window(&mut self, window: &crate::tao::structs::Window, label: String) -> Result<WebView> {
+  pub fn build_on_window(
+    &mut self,
+    window: &crate::tao::structs::Window,
+    label: String,
+  ) -> Result<WebView> {
     let window_lock = window.inner.as_ref().ok_or_else(|| {
       napi::Error::new(
         napi::Status::GenericFailure,
@@ -407,12 +419,35 @@ impl WebViewBuilder {
       target_os = "openbsd"
     ))]
     {
-      use tao::platform::unix::WindowExtUnix;
-      let webview = webview_builder.build_gtk(window_inner.gtk_window()).map_err(|e| {
-        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+      extern "C" {
+        fn gtk_bin_get_child(bin: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn gtk_container_remove(container: *mut std::ffi::c_void, widget: *mut std::ffi::c_void);
+        fn gtk_widget_show_all(widget: *mut std::ffi::c_void);
+      }
+
+      let window_ptr = window_inner.gtk_window();
+      let window_ptr_raw = unsafe { *(window_ptr as *const _ as *const *mut std::ffi::c_void) };
+
+      unsafe {
+        let child = gtk_bin_get_child(window_ptr_raw);
+        if !child.is_null() {
+          gtk_container_remove(window_ptr_raw, child);
+        }
+      }
+
+      let webview = webview_builder.build_gtk(window_ptr).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to create webview: {}", e),
+        )
       })?;
+
+      unsafe {
+        gtk_widget_show_all(window_ptr_raw);
+      }
+
       Ok(WebView {
-        inner: Some(Arc::new(Mutex::new(webview))),
+        inner: Some(Rc::new(Mutex::new(webview))),
         label,
       })
     }
@@ -426,10 +461,13 @@ impl WebViewBuilder {
     )))]
     {
       let webview = webview_builder.build(&window_inner).map_err(|e| {
-        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to create webview: {}", e),
+        )
       })?;
       Ok(WebView {
-        inner: Some(Arc::new(Mutex::new(webview))),
+        inner: Some(Rc::new(Mutex::new(webview))),
         label,
       })
     }
@@ -469,7 +507,10 @@ impl WebViewBuilder {
 
     // Build the window
     let window = window_builder.build(el).map_err(|e| {
-      napi::Error::new(napi::Status::GenericFailure, format!("Failed to create window: {}", e))
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        format!("Failed to create window: {}", e),
+      )
     })?;
 
     // Create webview builder
@@ -491,12 +532,35 @@ impl WebViewBuilder {
       target_os = "openbsd"
     ))]
     {
-      use tao::platform::unix::WindowExtUnix;
-      let webview = webview_builder.build_gtk(window.gtk_window()).map_err(|e| {
-        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+      extern "C" {
+        fn gtk_bin_get_child(bin: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn gtk_container_remove(container: *mut std::ffi::c_void, widget: *mut std::ffi::c_void);
+        fn gtk_widget_show_all(widget: *mut std::ffi::c_void);
+      }
+
+      let window_ptr = window.gtk_window();
+      let window_ptr_raw = unsafe { *(window_ptr as *const _ as *const *mut std::ffi::c_void) };
+
+      unsafe {
+        let child = gtk_bin_get_child(window_ptr_raw);
+        if !child.is_null() {
+          gtk_container_remove(window_ptr_raw, child);
+        }
+      }
+
+      let webview = webview_builder.build_gtk(window_ptr).map_err(|e| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to create webview: {}", e),
+        )
       })?;
+
+      unsafe {
+        gtk_widget_show_all(window_ptr_raw);
+      }
+
       Ok(WebView {
-        inner: Some(Arc::new(Mutex::new(webview))),
+        inner: Some(Rc::new(Mutex::new(webview))),
         label,
       })
     }
@@ -510,10 +574,13 @@ impl WebViewBuilder {
     )))]
     {
       let webview = webview_builder.build(&window).map_err(|e| {
-        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          format!("Failed to create webview: {}", e),
+        )
       })?;
       Ok(WebView {
-        inner: Some(Arc::new(Mutex::new(webview))),
+        inner: Some(Rc::new(Mutex::new(webview))),
         label,
       })
     }
@@ -524,7 +591,7 @@ impl WebViewBuilder {
 #[napi]
 pub struct WebView {
   #[allow(dead_code)]
-  pub(crate) inner: Option<Arc<Mutex<wry::WebView>>>,
+  pub(crate) inner: Option<Rc<Mutex<wry::WebView>>>,
   label: String,
 }
 

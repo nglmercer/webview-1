@@ -380,12 +380,16 @@ impl EventLoopBuilder {
   /// Builds the event loop.
   #[napi]
   pub fn build(&mut self) -> Result<EventLoop> {
-    let event_loop = self.inner.take().ok_or_else(|| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        "EventLoopBuilder already consumed".to_string(),
-      )
-    })?.build();
+    let event_loop = self
+      .inner
+      .take()
+      .ok_or_else(|| {
+        napi::Error::new(
+          napi::Status::GenericFailure,
+          "EventLoopBuilder already consumed".to_string(),
+        )
+      })?
+      .build();
     let proxy = event_loop.create_proxy();
     Ok(EventLoop {
       inner: Some(event_loop),
@@ -441,9 +445,7 @@ impl Window {
   /// Creates a new window with default attributes.
   #[napi(constructor)]
   pub fn new() -> Result<Self> {
-    Ok(Self {
-      inner: None,
-    })
+    Ok(Self { inner: None })
   }
 
   /// Gets the window ID.
@@ -563,7 +565,10 @@ impl Window {
   #[napi]
   pub fn set_outer_position(&self, x: f64, y: f64) -> Result<()> {
     if let Some(inner) = &self.inner {
-      let _ = inner.lock().unwrap().set_outer_position(tao::dpi::PhysicalPosition::new(x as i32, y as i32));
+      inner
+        .lock()
+        .unwrap()
+        .set_outer_position(tao::dpi::PhysicalPosition::new(x as i32, y as i32));
     }
     Ok(())
   }
@@ -589,7 +594,10 @@ impl Window {
   #[napi]
   pub fn set_inner_size(&self, width: f64, height: f64) -> Result<()> {
     if let Some(inner) = &self.inner {
-      let _ = inner.lock().unwrap().set_inner_size(tao::dpi::PhysicalSize::new(width as u32, height as u32));
+      inner
+        .lock()
+        .unwrap()
+        .set_inner_size(tao::dpi::PhysicalSize::new(width as u32, height as u32));
     }
     Ok(())
   }
@@ -665,7 +673,7 @@ impl Window {
   #[napi]
   pub fn request_focus(&self) -> Result<()> {
     if let Some(inner) = &self.inner {
-      let _ = inner.lock().unwrap().set_focus();
+      inner.lock().unwrap().set_focus();
     }
     Ok(())
   }
@@ -718,9 +726,12 @@ impl Window {
   #[napi]
   pub fn set_cursor_position(&self, x: f64, y: f64) -> Result<()> {
     if let Some(inner) = &self.inner {
-      let _ = inner.lock().unwrap().set_cursor_position(tao::dpi::Position::Physical(
-        tao::dpi::PhysicalPosition::new(x as i32, y as i32),
-      ));
+      let _ = inner
+        .lock()
+        .unwrap()
+        .set_cursor_position(tao::dpi::Position::Physical(
+          tao::dpi::PhysicalPosition::new(x as i32, y as i32),
+        ));
     }
     Ok(())
   }
@@ -732,8 +743,8 @@ impl Window {
       let pos = inner.lock().unwrap().cursor_position().ok();
       if let Some(physical_pos) = pos {
         Ok(Position {
-          x: physical_pos.x as f64,
-          y: physical_pos.y as f64,
+          x: physical_pos.x,
+          y: physical_pos.y,
         })
       } else {
         Ok(Position { x: 0.0, y: 0.0 })
@@ -982,7 +993,10 @@ impl WindowBuilder {
 
     // Build the window
     let window = builder.build(el).map_err(|e| {
-      napi::Error::new(napi::Status::GenericFailure, format!("Failed to create window: {}", e))
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        format!("Failed to create window: {}", e),
+      )
     })?;
 
     Ok(Window {
