@@ -3,9 +3,10 @@
 //! This module contains all structs from the wry crate.
 
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::tao::structs::EventLoop;
 use crate::wry::enums::Theme as WryTheme;
@@ -193,6 +194,7 @@ pub struct WebViewAttributes {
 #[napi]
 pub struct WebViewBuilder {
   attributes: WebViewAttributes,
+  ipc_handler: Option<ThreadsafeFunction<String>>,
   #[allow(dead_code)]
   inner: Option<wry::WebViewBuilder<'static>>,
 }
@@ -227,6 +229,7 @@ impl WebViewBuilder {
         drag_drop: true,
         background_color: None,
       },
+      ipc_handler: None,
       inner: None,
     })
   }
@@ -385,6 +388,13 @@ impl WebViewBuilder {
     Ok(self)
   }
 
+  /// Sets the IPC handler for the webview.
+  #[napi(ts_args_type = "callback: (err: Error | null, message: string) => void")]
+  pub fn with_ipc_handler(&mut self, callback: ThreadsafeFunction<String>) -> Result<&Self> {
+    self.ipc_handler = Some(callback);
+    Ok(self)
+  }
+
   /// Builds the webview on an existing window.
   #[napi]
   pub fn build_on_window(
@@ -408,6 +418,11 @@ impl WebViewBuilder {
       webview_builder = webview_builder.with_url(url);
     } else if let Some(html) = &self.attributes.html {
       webview_builder = webview_builder.with_html(html);
+    }
+
+    // Apply initialization scripts
+    for script in &self.attributes.initialization_scripts {
+      webview_builder = webview_builder.with_initialization_script(&script.js);
     }
 
     // Build the webview
@@ -435,6 +450,12 @@ impl WebViewBuilder {
         }
       }
 
+      // IPC Handler
+      let (webview_builder_with_ipc, listeners) =
+        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+      let ipc_listeners = listeners;
+      webview_builder = webview_builder_with_ipc;
+
       let webview = webview_builder.build_gtk(window_ptr).map_err(|e| {
         napi::Error::new(
           napi::Status::GenericFailure,
@@ -449,6 +470,7 @@ impl WebViewBuilder {
       Ok(WebView {
         inner: Some(Rc::new(Mutex::new(webview))),
         label,
+        ipc_listeners,
       })
     }
 
@@ -460,6 +482,12 @@ impl WebViewBuilder {
       target_os = "openbsd"
     )))]
     {
+      // IPC Handler
+      let (webview_builder_with_ipc, listeners) =
+        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+      let ipc_listeners = listeners;
+      webview_builder = webview_builder_with_ipc;
+
       let webview = webview_builder.build(&window_inner).map_err(|e| {
         napi::Error::new(
           napi::Status::GenericFailure,
@@ -469,6 +497,7 @@ impl WebViewBuilder {
       Ok(WebView {
         inner: Some(Rc::new(Mutex::new(webview))),
         label,
+        ipc_listeners,
       })
     }
   }
@@ -523,6 +552,11 @@ impl WebViewBuilder {
       webview_builder = webview_builder.with_html(html);
     }
 
+    // Apply initialization scripts
+    for script in &self.attributes.initialization_scripts {
+      webview_builder = webview_builder.with_initialization_script(&script.js);
+    }
+
     // Build the webview
     #[cfg(any(
       target_os = "linux",
@@ -548,6 +582,12 @@ impl WebViewBuilder {
         }
       }
 
+      // IPC Handler
+      let (webview_builder_with_ipc, listeners) =
+        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+      let ipc_listeners = listeners;
+      webview_builder = webview_builder_with_ipc;
+
       let webview = webview_builder.build_gtk(window_ptr).map_err(|e| {
         napi::Error::new(
           napi::Status::GenericFailure,
@@ -562,6 +602,7 @@ impl WebViewBuilder {
       Ok(WebView {
         inner: Some(Rc::new(Mutex::new(webview))),
         label,
+        ipc_listeners,
       })
     }
 
@@ -573,6 +614,12 @@ impl WebViewBuilder {
       target_os = "openbsd"
     )))]
     {
+      // IPC Handler
+      let (webview_builder_with_ipc, listeners) =
+        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+      let ipc_listeners = listeners;
+      webview_builder = webview_builder_with_ipc;
+
       let webview = webview_builder.build(&window).map_err(|e| {
         napi::Error::new(
           napi::Status::GenericFailure,
@@ -582,6 +629,7 @@ impl WebViewBuilder {
       Ok(WebView {
         inner: Some(Rc::new(Mutex::new(webview))),
         label,
+        ipc_listeners,
       })
     }
   }
@@ -593,6 +641,7 @@ pub struct WebView {
   #[allow(dead_code)]
   pub(crate) inner: Option<Rc<Mutex<wry::WebView>>>,
   label: String,
+  pub(crate) ipc_listeners: Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
 }
 
 #[napi]
@@ -663,4 +712,67 @@ impl WebView {
     }
     Ok(())
   }
+
+  /// Loads a new URL in the webview.
+  #[napi]
+  pub fn load_url(&self, url: String) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      let _ = inner.lock().unwrap().load_url(&url);
+    }
+    Ok(())
+  }
+
+  /// Loads HTML content in the webview.
+  #[napi]
+  pub fn load_html(&self, html: String) -> Result<()> {
+    if let Some(inner) = &self.inner {
+      let _ = inner.lock().unwrap().load_html(&html);
+    }
+    Ok(())
+  }
+
+  /// Registers a callback for IPC messages.
+  #[napi(ts_args_type = "callback: (err: Error | null, message: string) => void")]
+  pub fn on(&self, callback: ThreadsafeFunction<String>) -> Result<()> {
+    self.ipc_listeners.lock().unwrap().push(callback);
+    Ok(())
+  }
+
+  /// Sends a message to the webview.
+  /// This calls window.__webview_on_message__(message) in JavaScript.
+  #[napi]
+  pub fn send(&self, message: String) -> Result<()> {
+    let js = format!(
+      "if (window.__webview_on_message__) window.__webview_on_message__({})",
+      serde_json::to_string(&message).map_err(|e| napi::Error::new(
+        napi::Status::GenericFailure,
+        format!("Failed to serialize message: {}", e)
+      ))?
+    );
+    self.evaluate_script(js)
+  }
+}
+
+fn setup_ipc_handler(
+  builder_ipc_handler: Option<ThreadsafeFunction<String>>,
+  webview_builder: wry::WebViewBuilder<'static>,
+) -> (
+  wry::WebViewBuilder<'static>,
+  Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
+) {
+  let ipc_listeners: Arc<Mutex<Vec<ThreadsafeFunction<String>>>> = Arc::new(Mutex::new(Vec::new()));
+  if let Some(ipc_handler) = builder_ipc_handler {
+    ipc_listeners.lock().unwrap().push(ipc_handler);
+  }
+
+  let listeners_clone = ipc_listeners.clone();
+  let webview_builder = webview_builder.with_ipc_handler(move |req| {
+    let msg = req.into_body();
+    let listeners = listeners_clone.lock().unwrap();
+    for listener in listeners.iter() {
+      let _ = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+    }
+  });
+
+  (webview_builder, ipc_listeners)
 }

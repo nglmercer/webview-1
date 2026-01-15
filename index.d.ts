@@ -57,6 +57,17 @@ export declare class WebView {
   reload(): void
   /** Prints the current page. */
   print(): void
+  /** Loads a new URL in the webview. */
+  loadUrl(url: string): void
+  /** Loads HTML content in the webview. */
+  loadHtml(html: string): void
+  /** Registers a callback for IPC messages. */
+  on(callback: (err: Error | null, message: string) => void): void
+  /**
+   * Sends a message to the webview.
+   * This calls window.__webview_on_message__(message) in JavaScript.
+   */
+  send(message: string): void
   /** Gets the GTK widget for the webview (Unix only). */
   gtkWidget(): bigint
 }
@@ -109,6 +120,8 @@ export declare class WebViewBuilder {
   withDragDrop(dragDrop: boolean): this
   /** Sets the background color of the webview. */
   withBackgroundColor(color: Buffer): this
+  /** Sets the IPC handler for the webview. */
+  withIpcHandler(callback: (err: Error | null, message: string) => void): this
   /** Builds the webview on an existing window. */
   buildOnWindow(window: Window, label: string): WebView
   /** Builds the webview. */
