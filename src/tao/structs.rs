@@ -352,6 +352,32 @@ impl EventLoop {
     Ok(())
   }
 
+  /// Runs a single iteration of the event loop.
+  #[napi]
+  pub fn run_iteration(&mut self) -> Result<()> {
+    if let Some(event_loop) = &mut self.inner {
+      #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "windows",
+        target_os = "macos",
+      ))]
+      {
+        use tao::platform::run_return::EventLoopExtRunReturn;
+        event_loop.run_return(|event, _, control_flow| {
+          *control_flow = tao::event_loop::ControlFlow::Wait;
+          if let tao::event::Event::RedrawEventsCleared = event {
+            *control_flow = tao::event_loop::ControlFlow::Exit;
+          }
+        });
+      }
+    }
+    Ok(())
+  }
+
   /// Creates an event loop proxy.
   #[napi]
   pub fn create_proxy(&self) -> Result<EventLoopProxy> {

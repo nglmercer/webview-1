@@ -6,6 +6,8 @@ export declare class EventLoop {
   constructor()
   /** Runs the event loop. */
   run(): void
+  /** Runs a single iteration of the event loop. */
+  runIteration(): void
   /** Creates an event loop proxy. */
   createProxy(): EventLoopProxy
 }
@@ -62,7 +64,7 @@ export declare class WebView {
   /** Loads HTML content in the webview. */
   loadHtml(html: string): void
   /** Registers a callback for IPC messages. */
-  on(callback: (err: Error | null, message: string) => void): void
+  on(callback: (message: string) => void): void
   /**
    * Sends a message to the webview.
    * This calls window.__webview_on_message__(message) in JavaScript.
@@ -121,7 +123,7 @@ export declare class WebViewBuilder {
   /** Sets the background color of the webview. */
   withBackgroundColor(color: Buffer): this
   /** Sets the IPC handler for the webview. */
-  withIpcHandler(callback: (err: Error | null, message: string) => void): this
+  withIpcHandler(callback: (message: string) => void): this
   /** Builds the webview on an existing window. */
   buildOnWindow(window: Window, label: string): WebView
   /** Builds the webview. */

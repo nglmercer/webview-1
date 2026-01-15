@@ -389,7 +389,7 @@ impl WebViewBuilder {
   }
 
   /// Sets the IPC handler for the webview.
-  #[napi(ts_args_type = "callback: (err: Error | null, message: string) => void")]
+  #[napi(ts_args_type = "callback: (message: string) => void")]
   pub fn with_ipc_handler(&mut self, callback: ThreadsafeFunction<String>) -> Result<&Self> {
     self.ipc_handler = Some(callback);
     Ok(self)
@@ -732,7 +732,7 @@ impl WebView {
   }
 
   /// Registers a callback for IPC messages.
-  #[napi(ts_args_type = "callback: (err: Error | null, message: string) => void")]
+  #[napi(ts_args_type = "callback: (message: string) => void")]
   pub fn on(&self, callback: ThreadsafeFunction<String>) -> Result<()> {
     self.ipc_listeners.lock().unwrap().push(callback);
     Ok(())
@@ -768,9 +768,20 @@ fn setup_ipc_handler(
   let listeners_clone = ipc_listeners.clone();
   let webview_builder = webview_builder.with_ipc_handler(move |req| {
     let msg = req.into_body();
-    let listeners = listeners_clone.lock().unwrap();
-    for listener in listeners.iter() {
-      let _ = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+    println!("Rust raw IPC msg: {}", msg);
+    let mut listeners = listeners_clone.lock().unwrap();
+    
+    // Clean up dropped listeners if any and notify others
+    let mut i = 0;
+    while i < listeners.len() {
+      let status = listeners[i].call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+      if status != napi::Status::Ok {
+        if status == napi::Status::Closing {
+          listeners.remove(i);
+          continue;
+        }
+      }
+      i += 1;
     }
   });
 

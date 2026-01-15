@@ -10,6 +10,8 @@ async function main() {
       .withTitle('Antigravity Premium Dashboard')
       .withInnerSize(1200, 800)
       .withTheme(TaoTheme.Dark)
+      .withDecorated(true)
+      .withMenubar(true)
       .build(eventLoop)
     const html = `
       <!DOCTYPE html>
@@ -60,16 +62,6 @@ async function main() {
     `
     
     const builder = new WebViewBuilder()
-      .withInitializationScript({
-        js: `
-          window.ipc = {
-            postMessage: function(message) {
-              window.postMessage(message);
-            }
-          };
-        `,
-        once: false
-      })
       .withHtml(html)
       .withTitle('IPC Test')
       .withWidth(600)
@@ -89,10 +81,13 @@ async function main() {
       console.log('Second listener received:', msg);
     });
 
-    console.log('✓ Webview created. ID:', webview.id)
-    console.log('Presiona Ctrl+C para salir')
-    
-    eventLoop.run()
+    setInterval(() => {
+      // @ts-ignore
+      eventLoop.runIteration();
+      // Keep references alive
+      (window as any)._keepAlive = true;
+      (webview as any)._keepAlive = true;
+    }, 10)
   } catch (error) {
     console.error('Error:', error)
   }
