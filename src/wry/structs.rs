@@ -488,7 +488,7 @@ impl WebViewBuilder {
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
-      let webview = webview_builder.build(&window_inner).map_err(|e| {
+      let webview = webview_builder.build(&*window_inner).map_err(|e| {
         napi::Error::new(
           napi::Status::GenericFailure,
           format!("Failed to create webview: {}", e),

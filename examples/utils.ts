@@ -1,24 +1,31 @@
 /**
- * Utilidades para simplificar la creación de ventanas y webviews
- * con @webviewjs/webview
+ * Utilities for simplifying window and webview creation
+ * with @webviewjs/webview
+ * 
+ * This module provides helper functions and default configurations
+ * to streamline the creation of windows and webviews.
  */
 
 import {
-    WindowOptions,
-    //@ts-ignore
-    WindowAttributes,
-    WindowSizeConstraints,
-    TaoTheme,
-    WebViewAttributes,
-    WryTheme,
-    InitializationScript,
-    Size,
-    //@ts-ignore
-    Position
+  WindowOptions,
+  //@ts-ignore
+  WindowAttributes,
+  WindowSizeConstraints,
+  TaoTheme,
+  WebViewAttributes,
+  WryTheme,
+  InitializationScript,
+  Size,
+  //@ts-ignore
+  Position
 } from '../index'
 
+import { createLogger } from './logger'
+
+const logger = createLogger('Utils')
+
 /**
- * Opciones por defecto para ventanas
+ * Default options for windows
  */
 const DEFAULT_WINDOW_OPTIONS: Partial<WindowOptions> = {
   width: 800,
@@ -38,7 +45,7 @@ const DEFAULT_WINDOW_OPTIONS: Partial<WindowOptions> = {
 }
 
 /**
- * Opciones por defecto para webviews
+ * Default options for webviews
  */
 const DEFAULT_WEBVIEW_OPTIONS: Partial<WebViewAttributes> = {
   width: 800,
@@ -63,40 +70,46 @@ const DEFAULT_WEBVIEW_OPTIONS: Partial<WebViewAttributes> = {
 }
 
 /**
- * Crea opciones de ventana con valores por defecto
+ * Create window options with default values
  */
 export function createWindowOptions(
   title: string,
   overrides: Partial<WindowOptions> = {}
 ): WindowOptions {
-  return {
+  const options = {
     ...DEFAULT_WINDOW_OPTIONS,
     title,
     ...overrides
   } as WindowOptions
+
+  logger.debug('Window options created', { title, options })
+  return options
 }
 
 /**
- * Crea opciones de webview con valores por defecto
+ * Create webview options with default values
  */
 export function createWebViewOptions(
   overrides: Partial<WebViewAttributes> = {}
 ): WebViewAttributes {
-  return {
+  const options = {
     ...DEFAULT_WEBVIEW_OPTIONS,
     ...overrides
   } as WebViewAttributes
+
+  logger.debug('Webview options created', { options })
+  return options
 }
 
 /**
- * Crea una ventana básica con título
+ * Create a basic window with title
  */
 export function createBasicWindow(title: string): WindowOptions {
   return createWindowOptions(title)
 }
 
 /**
- * Crea una ventana con tema oscuro
+ * Create a window with dark theme
  */
 export function createDarkWindow(title: string): WindowOptions {
   return createWindowOptions(title, {
@@ -105,7 +118,7 @@ export function createDarkWindow(title: string): WindowOptions {
 }
 
 /**
- * Crea una ventana sin decoraciones (frameless)
+ * Create a window without decorations (frameless)
  */
 export function createFramelessWindow(title: string): WindowOptions {
   return createWindowOptions(title, {
@@ -118,7 +131,7 @@ export function createFramelessWindow(title: string): WindowOptions {
 }
 
 /**
- * Crea una ventana maximizada
+ * Create a maximized window
  */
 export function createMaximizedWindow(title: string): WindowOptions {
   return createWindowOptions(title, {
@@ -131,7 +144,7 @@ export function createMaximizedWindow(title: string): WindowOptions {
 }
 
 /**
- * Crea una ventana centrada en el monitor
+ * Create a centered window on the monitor
  */
 export function createCenteredWindow(title: string, monitorSize: Size): WindowOptions {
   const width = 800
@@ -146,12 +159,13 @@ export function createCenteredWindow(title: string, monitorSize: Size): WindowOp
 }
 
 /**
- * Crea una ventana con restricciones de tamaño
+ * Create a window with size constraints
  */
 export function createWindowWithConstraints(
   title: string,
   constraints: WindowSizeConstraints
 ): { window: WindowOptions; constraints: WindowSizeConstraints } {
+  logger.debug('Window with constraints created', { title, constraints })
   return {
     window: createWindowOptions(title),
     constraints
@@ -159,7 +173,7 @@ export function createWindowWithConstraints(
 }
 
 /**
- * Crea un webview básico con URL
+ * Create a basic webview with URL
  */
 export function createBasicWebView(url: string): WebViewAttributes {
   return createWebViewOptions({
@@ -169,7 +183,7 @@ export function createBasicWebView(url: string): WebViewAttributes {
 }
 
 /**
- * Crea un webview con contenido HTML
+ * Create a webview with HTML content
  */
 export function createHtmlWebView(html: string, title = 'WebView HTML'): WebViewAttributes {
   return createWebViewOptions({
@@ -180,7 +194,7 @@ export function createHtmlWebView(html: string, title = 'WebView HTML'): WebView
 }
 
 /**
- * Crea un webview con tema oscuro
+ * Create a webview with dark theme
  */
 export function createDarkWebView(url: string): WebViewAttributes {
   return createWebViewOptions({
@@ -190,7 +204,7 @@ export function createDarkWebView(url: string): WebViewAttributes {
 }
 
 /**
- * Crea un webview transparente (frameless)
+ * Create a transparent webview (frameless)
  */
 export function createTransparentWebView(html: string): WebViewAttributes {
   return createWebViewOptions({
@@ -206,7 +220,7 @@ export function createTransparentWebView(html: string): WebViewAttributes {
 }
 
 /**
- * Crea un webview con scripts de inicialización
+ * Create a webview with initialization scripts
  */
 export function createWebViewWithScripts(
   url: string,
@@ -219,14 +233,14 @@ export function createWebViewWithScripts(
 }
 
 /**
- * Crea un script de inicialización simple
+ * Create a simple initialization script
  */
 export function createInitScript(js: string, once = false): InitializationScript {
   return { js, once }
 }
 
 /**
- * Crea un HTML básico para webview
+ * Create basic HTML for webview
  */
 export function createBasicHtml(title: string, content: string): string {
   return `<!DOCTYPE html>
@@ -275,9 +289,9 @@ export function createBasicHtml(title: string, content: string): string {
 }
 
 /**
- * Crea un HTML con un contador interactivo
+ * Create HTML with an interactive counter
  */
-export function createCounterHtml(title = 'Contador Interactivo'): string {
+export function createCounterHtml(title = 'Interactive Counter'): string {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -337,7 +351,7 @@ export function createCounterHtml(title = 'Contador Interactivo'): string {
 </head>
 <body>
   <div class="container">
-    <h1>Contador</h1>
+    <h1>Counter</h1>
     <div class="counter" id="counter">0</div>
     <button onclick="decrement()">-</button>
     <button onclick="increment()">+</button>
@@ -361,7 +375,7 @@ export function createCounterHtml(title = 'Contador Interactivo'): string {
 }
 
 /**
- * Crea un HTML con información del sistema
+ * Create HTML with system information
  */
 export function createSystemInfoHtml(): string {
   return `<!DOCTYPE html>
@@ -369,7 +383,7 @@ export function createSystemInfoHtml(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Información del Sistema</title>
+  <title>System Information</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -416,78 +430,130 @@ export function createSystemInfoHtml(): string {
 </head>
 <body>
   <div class="container">
-    <h1>Información del Sistema</h1>
+    <h1>System Information</h1>
     <div class="info-item">
-      <span class="label">Plataforma:</span>
+      <span class="label">Platform:</span>
       <span class="value" id="platform">-</span>
     </div>
     <div class="info-item">
-      <span class="label">Navegador:</span>
+      <span class="label">Browser:</span>
       <span class="value" id="browser">-</span>
     </div>
     <div class="info-item">
-      <span class="label">Resolución:</span>
+      <span class="label">Resolution:</span>
       <span class="value" id="resolution">-</span>
     </div>
     <div class="info-item">
-      <span class="label">Ratio de píxeles:</span>
+      <span class="label">Pixel Ratio:</span>
       <span class="value" id="pixelRatio">-</span>
     </div>
     <div class="info-item">
-      <span class="label">Idioma:</span>
+      <span class="label">Language:</span>
       <span class="value" id="language">-</span>
     </div>
   </div>
   <script>
-    document.getElementById('platform').textContent = navigator.platform || 'Desconocido';
-    document.getElementById('browser').textContent = navigator.userAgent.split(' ').pop() || 'Desconocido';
+    document.getElementById('platform').textContent = navigator.platform || 'Unknown';
+    document.getElementById('browser').textContent = navigator.userAgent.split(' ').pop() || 'Unknown';
     document.getElementById('resolution').textContent = \`\${window.screen.width}x\${window.screen.height}\`;
     document.getElementById('pixelRatio').textContent = window.devicePixelRatio || 1;
-    document.getElementById('language').textContent = navigator.language || 'Desconocido';
+    document.getElementById('language').textContent = navigator.language || 'Unknown';
   </script>
 </body>
 </html>`
 }
 
 /**
- * Valida las opciones de ventana
+ * Validate window options
  */
 export function validateWindowOptions(options: WindowOptions): boolean {
   if (!options.title || options.title.trim() === '') {
-    console.error('Error: El título de la ventana es requerido')
+    logger.error('Window title is required')
     return false
   }
 
   if (options.width <= 0 || options.height <= 0) {
-    console.error('Error: El ancho y alto deben ser positivos')
+    logger.error('Width and height must be positive')
     return false
   }
 
+  logger.debug('Window options validated', { title: options.title })
   return true
 }
 
 /**
- * Valida las opciones de webview
+ * Validate webview options
  */
 export function validateWebViewOptions(options: WebViewAttributes): boolean {
   if (!options.url && !options.html) {
-    console.error('Error: Se debe proporcionar una URL o contenido HTML')
+    logger.error('URL or HTML content must be provided')
     return false
   }
 
   if (options.width <= 0 || options.height <= 0) {
-    console.error('Error: El ancho y alto deben ser positivos')
+    logger.error('Width and height must be positive')
     return false
   }
 
+  logger.debug('Webview options validated')
   return true
 }
 
 /**
- * Imprime información de configuración para debugging
+ * Log configuration for debugging
  */
 export function logConfig(type: 'window' | 'webview', config: any): void {
-  console.log(`=== Configuración de ${type} ===`)
-  console.log(JSON.stringify(config, null, 2))
-  console.log('================================')
+  logger.section(`${type.charAt(0).toUpperCase() + type.slice(1)} Configuration`)
+  logger.object(`${type} configuration`, config)
 }
+
+/**
+ * Create a responsive window configuration
+ */
+export function createResponsiveWindow(
+  title: string,
+  minWidth: number = 400,
+  minHeight: number = 300
+): { window: WindowOptions; constraints: WindowSizeConstraints } {
+  return {
+    window: createWindowOptions(title, {
+      width: 800,
+      height: 600
+    }),
+    constraints: {
+      minWidth,
+      minHeight,
+      maxWidth: 1920,
+      maxHeight: 1080
+    }
+  }
+}
+
+/**
+ * Create a fullscreen window
+ */
+export function createFullscreenWindow(title: string): WindowOptions {
+  return createWindowOptions(title, {
+    width: 1920,
+    height: 1080,
+    x: 0,
+    y: 0,
+    decorations: false,
+    resizable: false
+  })
+}
+
+/**
+ * Create a webview with custom user agent
+ */
+export function createWebViewWithUserAgent(
+  url: string,
+  userAgent: string
+): WebViewAttributes {
+  return createWebViewOptions({
+    url,
+    userAgent
+  })
+}
+
+
