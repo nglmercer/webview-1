@@ -33,7 +33,7 @@ async function main() {
       .withFocused(true)
       .withMenubar(true)
     
-    const window = builder.build()
+    const window = builder.build(eventLoop)
     console.log('✓ Ventana creada con ID:', window.id)
     console.log('✓ Título:', window.title())
     console.log('✓ Tamaño:', window.innerSize())

@@ -80,7 +80,7 @@ async function main() {
       .withFocused(true)
       .withMenubar(true)
     
-    const webview = builder.build('webview-1')
+    const webview = builder.build(eventLoop, 'webview-1')
     console.log('✓ WebView creado con ID:', webview.id)
     console.log('✓ Label:', webview.label)
     

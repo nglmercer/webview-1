@@ -22,8 +22,19 @@ impl WebView {
     ))]
     {
       use wry::WebViewExtUnix;
-      let widget = self.inner.lock().unwrap().gtk_widget();
-      Ok(widget as u64)
+      if let Some(inner) = &self.inner {
+        let guard = inner.lock().unwrap();
+        let webview_widget = guard.webview();
+        // In webkit2gtk-rs, the widget is a wrapper around a pointer.
+        // We can safely extract it as a u64 (pointer) for the GTK widget.
+        let widget_ptr = &webview_widget as *const _ as *const *const std::ffi::c_void;
+        Ok(unsafe { *widget_ptr } as u64)
+      } else {
+        Err(napi::Error::new(
+          napi::Status::GenericFailure,
+          "WebView not initialized".to_string(),
+        ))
+      }
     }
 
     #[cfg(not(any(

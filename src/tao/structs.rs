@@ -323,9 +323,9 @@ pub struct Icon {
 #[napi]
 pub struct EventLoop {
   #[allow(dead_code)]
-  inner: Option<tao::event_loop::EventLoop<()>>,
+  pub(crate) inner: Option<tao::event_loop::EventLoop<()>>,
   #[allow(dead_code)]
-  proxy: Option<tao::event_loop::EventLoopProxy<()>>,
+  pub(crate) proxy: Option<tao::event_loop::EventLoopProxy<()>>,
 }
 
 #[napi]
@@ -433,7 +433,7 @@ pub struct EventLoopWindowTarget {
 #[napi]
 pub struct Window {
   #[allow(dead_code)]
-  inner: Option<Arc<Mutex<tao::window::Window>>>,
+  pub(crate) inner: Option<Arc<Mutex<tao::window::Window>>>,
 }
 
 #[napi]
@@ -451,7 +451,15 @@ impl Window {
   pub fn id(&self) -> Result<u64> {
     if let Some(inner) = &self.inner {
       let id = inner.lock().unwrap().id();
-      Ok(unsafe { std::mem::transmute(id) })
+      let mut id_val: u64 = 0;
+      unsafe {
+        std::ptr::copy_nonoverlapping(
+          &id as *const _ as *const u8,
+          &mut id_val as *mut _ as *mut u8,
+          std::mem::size_of_val(&id).min(8),
+        );
+      }
+      Ok(id_val)
     } else {
       Ok(0)
     }
@@ -943,9 +951,14 @@ impl WindowBuilder {
 
   /// Builds the window.
   #[napi]
-  pub fn build(&mut self) -> Result<Window> {
-    // Create a dummy event loop for window creation
-    let event_loop = tao::event_loop::EventLoop::new();
+  pub fn build(&mut self, event_loop: &EventLoop) -> Result<Window> {
+    // Get the event loop reference
+    let el = event_loop.inner.as_ref().ok_or_else(|| {
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        "Event loop already running or consumed".to_string(),
+      )
+    })?;
     let mut builder = tao::window::WindowBuilder::new()
       .with_title(&self.attributes.title)
       .with_inner_size(tao::dpi::LogicalSize::new(
@@ -968,7 +981,7 @@ impl WindowBuilder {
     }
 
     // Build the window
-    let window = builder.build(&event_loop).map_err(|e| {
+    let window = builder.build(el).map_err(|e| {
       napi::Error::new(napi::Status::GenericFailure, format!("Failed to create window: {}", e))
     })?;
 

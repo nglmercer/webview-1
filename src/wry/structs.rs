@@ -8,6 +8,23 @@ use std::sync::{Arc, Mutex};
 
 use crate::wry::enums::Theme as WryTheme;
 use crate::wry::types::Result;
+use crate::tao::structs::EventLoop;
+#[cfg(any(
+  target_os = "linux",
+  target_os = "dragonfly",
+  target_os = "freebsd",
+  target_os = "netbsd",
+  target_os = "openbsd"
+))]
+use tao::platform::unix::WindowExtUnix;
+#[cfg(any(
+  target_os = "linux",
+  target_os = "dragonfly",
+  target_os = "freebsd",
+  target_os = "netbsd",
+  target_os = "openbsd"
+))]
+use wry::WebViewBuilderExtUnix;
 
 /// An initialization script to be run when creating a webview.
 #[napi(object)]
@@ -360,11 +377,74 @@ impl WebViewBuilder {
     Ok(self)
   }
 
+  /// Builds the webview on an existing window.
+  #[napi]
+  pub fn build_on_window(&mut self, window: &crate::tao::structs::Window, label: String) -> Result<WebView> {
+    let window_lock = window.inner.as_ref().ok_or_else(|| {
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        "Window not initialized".to_string(),
+      )
+    })?;
+    let window_inner = window_lock.lock().unwrap();
+
+    // Create webview builder
+    let mut webview_builder = wry::WebViewBuilder::new();
+
+    // Set URL or HTML
+    if let Some(url) = &self.attributes.url {
+      webview_builder = webview_builder.with_url(url);
+    } else if let Some(html) = &self.attributes.html {
+      webview_builder = webview_builder.with_html(html);
+    }
+
+    // Build the webview
+    #[cfg(any(
+      target_os = "linux",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "netbsd",
+      target_os = "openbsd"
+    ))]
+    {
+      use tao::platform::unix::WindowExtUnix;
+      let webview = webview_builder.build_gtk(window_inner.gtk_window()).map_err(|e| {
+        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+      })?;
+      Ok(WebView {
+        inner: Some(Arc::new(Mutex::new(webview))),
+        label,
+      })
+    }
+
+    #[cfg(not(any(
+      target_os = "linux",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "netbsd",
+      target_os = "openbsd"
+    )))]
+    {
+      let webview = webview_builder.build(&window_inner).map_err(|e| {
+        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+      })?;
+      Ok(WebView {
+        inner: Some(Arc::new(Mutex::new(webview))),
+        label,
+      })
+    }
+  }
+
   /// Builds the webview.
   #[napi]
-  pub fn build(&mut self, label: String) -> Result<WebView> {
-    // Create event loop and window for the webview
-    let event_loop = tao::event_loop::EventLoop::new();
+  pub fn build(&mut self, event_loop: &EventLoop, label: String) -> Result<WebView> {
+    // Get the event loop reference
+    let el = event_loop.inner.as_ref().ok_or_else(|| {
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        "Event loop already running or consumed".to_string(),
+      )
+    })?;
     let mut window_builder = tao::window::WindowBuilder::new()
       .with_title(self.attributes.title.as_deref().unwrap_or("WebView"))
       .with_inner_size(tao::dpi::LogicalSize::new(
@@ -388,7 +468,7 @@ impl WebViewBuilder {
     }
 
     // Build the window
-    let window = window_builder.build(&event_loop).map_err(|e| {
+    let window = window_builder.build(el).map_err(|e| {
       napi::Error::new(napi::Status::GenericFailure, format!("Failed to create window: {}", e))
     })?;
 
@@ -403,14 +483,40 @@ impl WebViewBuilder {
     }
 
     // Build the webview
-    let webview = webview_builder.build(&window).map_err(|e| {
-      napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
-    })?;
+    #[cfg(any(
+      target_os = "linux",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "netbsd",
+      target_os = "openbsd"
+    ))]
+    {
+      use tao::platform::unix::WindowExtUnix;
+      let webview = webview_builder.build_gtk(window.gtk_window()).map_err(|e| {
+        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+      })?;
+      Ok(WebView {
+        inner: Some(Arc::new(Mutex::new(webview))),
+        label,
+      })
+    }
 
-    Ok(WebView {
-      inner: Some(Arc::new(Mutex::new(webview))),
-      label,
-    })
+    #[cfg(not(any(
+      target_os = "linux",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "netbsd",
+      target_os = "openbsd"
+    )))]
+    {
+      let webview = webview_builder.build(&window).map_err(|e| {
+        napi::Error::new(napi::Status::GenericFailure, format!("Failed to create webview: {}", e))
+      })?;
+      Ok(WebView {
+        inner: Some(Arc::new(Mutex::new(webview))),
+        label,
+      })
+    }
   }
 }
 
@@ -418,7 +524,7 @@ impl WebViewBuilder {
 #[napi]
 pub struct WebView {
   #[allow(dead_code)]
-  inner: Option<Arc<Mutex<wry::WebView>>>,
+  pub(crate) inner: Option<Arc<Mutex<wry::WebView>>>,
   label: String,
 }
 

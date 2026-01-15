@@ -110,7 +110,7 @@ export declare class WebViewBuilder {
   /** Sets the background color of the webview. */
   withBackgroundColor(color: Buffer): this
   /** Builds the webview. */
-  build(label: string): WebView
+  build(eventLoop: EventLoop, label: string): WebView
 }
 
 /** Window for displaying content. */
@@ -214,7 +214,7 @@ export declare class WindowBuilder {
   /** Sets the window theme. */
   withTheme(theme: TaoTheme): this
   /** Builds the window. */
-  build(): Window
+  build(eventLoop: EventLoop): Window
 }
 
 /** Returns a list of all available monitors. */
