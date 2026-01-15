@@ -7,7 +7,7 @@ use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
 use crate::tao::enums::{
-  CursorIcon, ModifiersState, MouseButton, MouseButtonState, Theme as TaoTheme, WindowEvent,
+  CursorIcon, ModifiersState, MouseButton, MouseButtonState, TaoTheme, WindowEvent,
 };
 use crate::tao::types::Result;
 
@@ -299,9 +299,9 @@ pub struct WindowAttributes {
   pub theme: Option<TaoTheme>,
 }
 
-/// Progress bar state and progress.
+/// Progress bar data from Tao.
 #[napi(object)]
-pub struct ProgressBarState {
+pub struct TaoProgressBar {
   /// The progress state.
   pub state: String,
   /// The progress value (0-100).

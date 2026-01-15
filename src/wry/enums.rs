@@ -84,8 +84,8 @@ pub enum ProxyConfig {
 }
 
 /// Theme for the webview.
-#[napi(js_name = "WryTheme")]
-pub enum Theme {
+#[napi]
+pub enum WryTheme {
   /// Light theme.
   Light,
   /// Dark theme.

@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::tao::structs::EventLoop;
-use crate::wry::enums::Theme as WryTheme;
+use crate::wry::enums::WryTheme;
 use crate::wry::types::Result;
 #[cfg(any(
   target_os = "linux",
@@ -770,16 +770,14 @@ fn setup_ipc_handler(
     let msg = req.into_body();
     println!("Rust raw IPC msg: {}", msg);
     let mut listeners = listeners_clone.lock().unwrap();
-    
+
     // Clean up dropped listeners if any and notify others
     let mut i = 0;
     while i < listeners.len() {
       let status = listeners[i].call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
-      if status != napi::Status::Ok {
-        if status == napi::Status::Closing {
-          listeners.remove(i);
-          continue;
-        }
+      if status == napi::Status::Closing {
+        listeners.remove(i);
+        continue;
       }
       i += 1;
     }

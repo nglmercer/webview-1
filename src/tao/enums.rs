@@ -8,7 +8,7 @@ use crate::tao::structs::MonitorInfo;
 
 /// Control flow of the application event loop.
 #[napi]
-pub enum ControlFlow {
+pub enum TaoControlFlow {
   /// The application will continue running normally.
   Poll,
   /// The application will wait until the specified time.
@@ -345,8 +345,8 @@ pub enum CursorIcon {
 }
 
 /// Window theme.
-#[napi(js_name = "TaoTheme")]
-pub enum Theme {
+#[napi]
+pub enum TaoTheme {
   /// Light theme.
   Light,
   /// Dark theme.
@@ -355,7 +355,7 @@ pub enum Theme {
 
 /// Fullscreen type.
 #[napi]
-pub enum FullscreenType {
+pub enum TaoFullscreenType {
   /// Exclusive fullscreen.
   Exclusive,
   /// Borderless fullscreen.
