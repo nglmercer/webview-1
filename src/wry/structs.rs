@@ -389,7 +389,7 @@ impl WebViewBuilder {
   }
 
   /// Sets the IPC handler for the webview.
-  #[napi(ts_args_type = "callback: (message: string) => void")]
+  #[napi(ts_args_type = "callback: (error: Error | null, message: string) => void")]
   pub fn with_ipc_handler(&mut self, callback: ThreadsafeFunction<String>) -> Result<&Self> {
     self.ipc_handler = Some(callback);
     Ok(self)
@@ -732,7 +732,7 @@ impl WebView {
   }
 
   /// Registers a callback for IPC messages.
-  #[napi(ts_args_type = "callback: (message: string) => void")]
+  #[napi(ts_args_type = "callback: (error: Error | null, message: string) => void")]
   pub fn on(&self, callback: ThreadsafeFunction<String>) -> Result<()> {
     self.ipc_listeners.lock().unwrap().push(callback);
     Ok(())

@@ -42,6 +42,9 @@ async function main() {
             }
             
             log('IPC interface initialized');
+            setTimeout(() => {
+                btn.click();
+            }, 2000);
             
             btn.addEventListener('click', () => {
               const message = 'Hello from JS at ' + new Date().toLocaleTimeString();
@@ -66,7 +69,7 @@ async function main() {
       .withTitle('IPC Test')
       .withWidth(600)
       .withHeight(400)
-      .withIpcHandler((msg) => {
+      .withIpcHandler((_err, msg) => {
         console.log('Rust received:', msg);
         // Reply back
         setTimeout(() => {
@@ -77,16 +80,17 @@ async function main() {
     const webview = builder.buildOnWindow(window, 'ipc-webview')
     webview.openDevtools()
     // Add another listener at runtime
-    webview.on((msg) => {
+    webview.on((_err, msg) => {
       console.log('Second listener received:', msg);
     });
 
     setInterval(() => {
-      // @ts-ignore
       eventLoop.runIteration();
       // Keep references alive
-      (window as any)._keepAlive = true;
-      (webview as any)._keepAlive = true;
+      //@ts-ignore
+      window._keepAlive = true;
+      //@ts-ignore
+      webview._keepAlive = true;
     }, 10)
   } catch (error) {
     console.error('Error:', error)
