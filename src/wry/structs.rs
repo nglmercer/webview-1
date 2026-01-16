@@ -486,19 +486,18 @@ impl WebViewBuilder {
     })?;
     let window_inner = window_lock.lock().unwrap();
 
-    // Create webview builder
-    println!("Building webview on window with transparency: {}", self.attributes.transparent);
     let mut webview_builder = wry::WebViewBuilder::new();
 
-    // Set transparency and background color
-    // On Windows, with_transparent(true) enables the capability, 
-    // and with_background_color([0, 0, 0, 0]) sets the actual transparency.
     webview_builder = webview_builder.with_transparent(self.attributes.transparent);
 
     if let Some(bg_color) = &self.attributes.background_color {
       if bg_color.len() >= 4 {
-        webview_builder =
-          webview_builder.with_background_color((bg_color[0], bg_color[1], bg_color[2], bg_color[3]));
+        webview_builder = webview_builder.with_background_color((
+          bg_color[0],
+          bg_color[1],
+          bg_color[2],
+          bg_color[3],
+        ));
       }
     } else if self.attributes.transparent {
       // Explicitly transparent background if transparent is requested and no color provided
@@ -507,8 +506,10 @@ impl WebViewBuilder {
 
     // Set bounds if provided
     webview_builder = webview_builder.with_bounds(wry::Rect {
-      position: tao::dpi::LogicalPosition::new(self.attributes.x as f64, self.attributes.y as f64).into(),
-      size: tao::dpi::LogicalSize::new(self.attributes.width as f64, self.attributes.height as f64).into(),
+      position: tao::dpi::LogicalPosition::new(self.attributes.x as f64, self.attributes.y as f64)
+        .into(),
+      size: tao::dpi::LogicalSize::new(self.attributes.width as f64, self.attributes.height as f64)
+        .into(),
     });
 
     // Set URL or HTML
@@ -533,9 +534,8 @@ impl WebViewBuilder {
     }
     webview_builder = webview_builder.with_autoplay(self.attributes.autoplay);
     webview_builder = webview_builder.with_clipboard(self.attributes.clipboard);
-    webview_builder = webview_builder.with_back_forward_navigation_gestures(
-      self.attributes.back_forward_navigation_gestures,
-    );
+    webview_builder = webview_builder
+      .with_back_forward_navigation_gestures(self.attributes.back_forward_navigation_gestures);
 
     // Apply initialization scripts
     for script in &self.attributes.initialization_scripts {
@@ -684,8 +684,12 @@ impl WebViewBuilder {
 
     if let Some(bg_color) = &self.attributes.background_color {
       if bg_color.len() >= 4 {
-        webview_builder =
-          webview_builder.with_background_color((bg_color[0], bg_color[1], bg_color[2], bg_color[3]));
+        webview_builder = webview_builder.with_background_color((
+          bg_color[0],
+          bg_color[1],
+          bg_color[2],
+          bg_color[3],
+        ));
       }
     } else if self.attributes.transparent {
       // Explicitly transparent background if transparent is requested and no color provided
@@ -694,8 +698,10 @@ impl WebViewBuilder {
 
     // Set bounds
     webview_builder = webview_builder.with_bounds(wry::Rect {
-      position: tao::dpi::LogicalPosition::new(self.attributes.x as f64, self.attributes.y as f64).into(),
-      size: tao::dpi::LogicalSize::new(self.attributes.width as f64, self.attributes.height as f64).into(),
+      position: tao::dpi::LogicalPosition::new(self.attributes.x as f64, self.attributes.y as f64)
+        .into(),
+      size: tao::dpi::LogicalSize::new(self.attributes.width as f64, self.attributes.height as f64)
+        .into(),
     });
 
     // Set URL or HTML
@@ -704,7 +710,7 @@ impl WebViewBuilder {
     } else if let Some(html) = &self.attributes.html {
       webview_builder = webview_builder.with_html(html);
     }
-    
+
     webview_builder = webview_builder.with_devtools(self.attributes.devtools);
 
     // Set other attributes
@@ -720,9 +726,8 @@ impl WebViewBuilder {
     }
     webview_builder = webview_builder.with_autoplay(self.attributes.autoplay);
     webview_builder = webview_builder.with_clipboard(self.attributes.clipboard);
-    webview_builder = webview_builder.with_back_forward_navigation_gestures(
-      self.attributes.back_forward_navigation_gestures,
-    );
+    webview_builder = webview_builder
+      .with_back_forward_navigation_gestures(self.attributes.back_forward_navigation_gestures);
 
     // Apply initialization scripts
     for script in &self.attributes.initialization_scripts {
@@ -954,17 +959,17 @@ fn setup_ipc_handler(
   let listeners_clone = ipc_listeners.clone();
   let webview_builder = webview_builder.with_ipc_handler(move |req| {
     let msg = req.into_body();
-    
+
     // Check if we have any listeners registered
     let listener_count = {
       let listeners = listeners_clone.lock().unwrap();
       listeners.len()
     };
-    
+
     if listener_count == 0 {
       return;
     }
-    
+
     // Call each listener with the message using Blocking mode for immediate execution
     let listeners = listeners_clone.lock().unwrap();
     for (idx, listener) in listeners.iter().enumerate() {

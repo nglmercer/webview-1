@@ -11,6 +11,8 @@ use crate::tao::enums::{
 };
 use crate::tao::types::Result;
 
+#[cfg(target_os = "macos")]
+use tao::platform::macos::WindowBuilderExtMacOS;
 #[cfg(any(
   target_os = "linux",
   target_os = "dragonfly",
@@ -19,8 +21,6 @@ use crate::tao::types::Result;
   target_os = "openbsd"
 ))]
 use tao::platform::unix::WindowBuilderExtUnix;
-#[cfg(target_os = "macos")]
-use tao::platform::macos::WindowBuilderExtMacOS;
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowBuilderExtWindows;
 
@@ -1027,7 +1027,10 @@ impl WindowBuilder {
         "Event loop already running or consumed".to_string(),
       )
     })?;
-    println!("Building window with transparency: {}", self.attributes.transparent);
+    println!(
+      "Building window with transparency: {}",
+      self.attributes.transparent
+    );
     let mut builder = tao::window::WindowBuilder::new()
       .with_title(&self.attributes.title)
       .with_inner_size(tao::dpi::LogicalSize::new(
@@ -1039,7 +1042,7 @@ impl WindowBuilder {
       .with_always_on_top(self.attributes.always_on_top)
       .with_visible(self.attributes.visible)
       .with_transparent(self.attributes.transparent);
-    
+
     #[cfg(any(
       target_os = "linux",
       target_os = "dragonfly",
@@ -1055,17 +1058,19 @@ impl WindowBuilder {
     #[cfg(target_os = "macos")]
     {
       if self.attributes.transparent {
-        builder = builder.with_titlebar_transparent(true)
+        builder = builder
+          .with_titlebar_transparent(true)
           .with_fullsize_content_view(true);
       }
     }
     #[cfg(target_os = "windows")]
     {
       if self.attributes.transparent {
-         builder = builder.with_undecorated_shadow(false);
+        builder = builder.with_undecorated_shadow(false);
       }
     }
-    builder = builder.with_maximized(self.attributes.maximized)
+    builder = builder
+      .with_maximized(self.attributes.maximized)
       .with_focused(self.attributes.focused);
 
     // Set position if provided

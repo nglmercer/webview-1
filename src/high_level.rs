@@ -9,8 +9,6 @@ pub type IpcHandler = ThreadsafeFunction<String>;
 #[allow(unused_imports)]
 use crate::tao::enums::{TaoControlFlow, TaoFullscreenType, TaoTheme};
 use crate::tao::structs::Position;
-#[cfg(target_os = "windows")]
-use tao::platform::windows::WindowBuilderExtWindows;
 #[cfg(target_os = "macos")]
 use tao::platform::macos::WindowBuilderExtMacOS;
 #[cfg(any(
@@ -21,6 +19,8 @@ use tao::platform::macos::WindowBuilderExtMacOS;
   target_os = "openbsd"
 ))]
 use tao::platform::unix::WindowBuilderExtUnix;
+#[cfg(target_os = "windows")]
+use tao::platform::windows::WindowBuilderExtWindows;
 
 #[napi]
 pub enum WebviewApplicationEvent {
@@ -276,7 +276,8 @@ impl Application {
         }
         #[cfg(target_os = "macos")]
         {
-          builder = builder.with_titlebar_transparent(true)
+          builder = builder
+            .with_titlebar_transparent(true)
             .with_fullsize_content_view(true);
         }
         #[cfg(any(
@@ -347,8 +348,11 @@ impl Application {
             if let Some(autoplay) = webview_opts.autoplay {
               let _ = builder.with_autoplay(autoplay);
             }
-            if let Some(back_forward_navigation_gestures) = webview_opts.back_forward_navigation_gestures {
-              let _ = builder.with_back_forward_navigation_gestures(back_forward_navigation_gestures);
+            if let Some(back_forward_navigation_gestures) =
+              webview_opts.back_forward_navigation_gestures
+            {
+              let _ =
+                builder.with_back_forward_navigation_gestures(back_forward_navigation_gestures);
             }
             // Apply preload script as initialization script
             if let Some(preload) = webview_opts.preload {
@@ -379,6 +383,7 @@ impl Application {
     if let Some(event_loop) = event_loop {
       let handler_clone = self.handler.clone();
       let exit_requested = self.exit_requested.clone();
+      #[allow(clippy::arc_with_non_send_sync)]
       let app_ref = Arc::new(self.clone_internal());
 
       event_loop.run(move |event, event_loop_target, control_flow| {
@@ -431,6 +436,7 @@ impl Application {
 
       let handler_clone = self.handler.clone();
       let exit_requested = self.exit_requested.clone();
+      #[allow(clippy::arc_with_non_send_sync)]
       let app_ref = Arc::new(self.clone_internal());
 
       if *exit_requested.lock().unwrap() {
