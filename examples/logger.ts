@@ -36,6 +36,16 @@ class Logger {
   }
 
   /**
+   * Convert BigInt values to strings for JSON serialization
+   */
+  private jsonReplacer(key: string, value: any): any {
+    if (typeof value === 'bigint') {
+      return value.toString()
+    }
+    return value
+  }
+
+  /**
    * Format log entry with colors and structure
    */
   private formatLog(entry: LogEntry): string {
@@ -55,7 +65,7 @@ class Logger {
     let output = `${color}[${level}]${reset} ${timestamp} [${this.context}] ${message}`
     
     if (data) {
-      output += `\n${JSON.stringify(data, null, 2)}`
+      output += `\n${JSON.stringify(data, this.jsonReplacer.bind(this), 2)}`
     }
     
     return output
@@ -132,13 +142,10 @@ class Logger {
    * Print banner
    */
   banner(title: string, subtitle?: string): void {
-    const border = '═'.repeat(60)
-    console.log(`\n${border}`)
-    console.log(`║  ${title}${' '.repeat(58 - title.length)}║`)
+    console.log(` ${title}${' '.repeat(58 - title.length)}`)
     if (subtitle) {
-      console.log(`║  ${subtitle}${' '.repeat(58 - subtitle.length)}║`)
+      console.log(` ${subtitle}${' '.repeat(58 - subtitle.length)}`)
     }
-    console.log(`${border}\n`)
   }
 }
 

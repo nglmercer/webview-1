@@ -190,11 +190,14 @@ pub struct WebViewAttributes {
   pub background_color: Option<Buffer>,
 }
 
+pub type IpcHandler = ThreadsafeFunction<String>;
+
 /// Builder for creating webviews.
 #[napi]
 pub struct WebViewBuilder {
   attributes: WebViewAttributes,
-  ipc_handler: Option<ThreadsafeFunction<String>>,
+  ipc_handler: Option<IpcHandler>,
+  ipc_handlers: Vec<IpcHandler>,
   #[allow(dead_code)]
   inner: Option<wry::WebViewBuilder<'static>>,
 }
@@ -230,6 +233,7 @@ impl WebViewBuilder {
         background_color: None,
       },
       ipc_handler: None,
+      ipc_handlers: Vec::new(),
       inner: None,
     })
   }
@@ -390,8 +394,15 @@ impl WebViewBuilder {
 
   /// Sets the IPC handler for the webview.
   #[napi(ts_args_type = "callback: (error: Error | null, message: string) => void")]
-  pub fn with_ipc_handler(&mut self, callback: ThreadsafeFunction<String>) -> Result<&Self> {
+  pub fn with_ipc_handler(&mut self, callback: IpcHandler) -> Result<&Self> {
     self.ipc_handler = Some(callback);
+    Ok(self)
+  }
+
+  /// Adds multiple IPC handlers for the webview.
+  #[napi]
+  pub fn with_ipc_handlers(&mut self, handlers: Vec<IpcHandler>) -> Result<&Self> {
+    self.ipc_handlers.extend(handlers);
     Ok(self)
   }
 
@@ -401,6 +412,7 @@ impl WebViewBuilder {
     &mut self,
     window: &crate::tao::structs::Window,
     label: String,
+    ipc_listeners_override: Option<Arc<Mutex<Vec<IpcHandler>>>>,
   ) -> Result<WebView> {
     let window_lock = window.inner.as_ref().ok_or_else(|| {
       napi::Error::new(
@@ -452,7 +464,7 @@ impl WebViewBuilder {
 
       // IPC Handler
       let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -484,7 +496,7 @@ impl WebViewBuilder {
     {
       // IPC Handler
       let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -504,7 +516,7 @@ impl WebViewBuilder {
 
   /// Builds the webview.
   #[napi]
-  pub fn build(&mut self, event_loop: &EventLoop, label: String) -> Result<WebView> {
+  pub fn build(&mut self, event_loop: &EventLoop, label: String, ipc_listeners_override: Option<Arc<Mutex<Vec<IpcHandler>>>>) -> Result<WebView> {
     // Get the event loop reference
     let el = event_loop.inner.as_ref().ok_or_else(|| {
       napi::Error::new(
@@ -584,7 +596,7 @@ impl WebViewBuilder {
 
       // IPC Handler
       let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -616,7 +628,7 @@ impl WebViewBuilder {
     {
       // IPC Handler
       let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), webview_builder);
+        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -641,7 +653,7 @@ pub struct WebView {
   #[allow(dead_code)]
   pub(crate) inner: Option<Rc<Mutex<wry::WebView>>>,
   label: String,
-  pub(crate) ipc_listeners: Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
+  pub(crate) ipc_listeners: Arc<Mutex<Vec<IpcHandler>>>,
 }
 
 #[napi]
@@ -733,7 +745,7 @@ impl WebView {
 
   /// Registers a callback for IPC messages.
   #[napi(ts_args_type = "callback: (error: Error | null, message: string) => void")]
-  pub fn on(&self, callback: ThreadsafeFunction<String>) -> Result<()> {
+  pub fn on(&self, callback: IpcHandler) -> Result<()> {
     self.ipc_listeners.lock().unwrap().push(callback);
     Ok(())
   }
@@ -754,32 +766,44 @@ impl WebView {
 }
 
 fn setup_ipc_handler(
-  builder_ipc_handler: Option<ThreadsafeFunction<String>>,
+  builder_ipc_handler: Option<IpcHandler>,
+  additional_handlers: Vec<IpcHandler>,
   webview_builder: wry::WebViewBuilder<'static>,
+  ipc_listeners_override: Option<Arc<Mutex<Vec<IpcHandler>>>>,
 ) -> (
   wry::WebViewBuilder<'static>,
-  Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
+  Arc<Mutex<Vec<IpcHandler>>>,
 ) {
-  let ipc_listeners: Arc<Mutex<Vec<ThreadsafeFunction<String>>>> = Arc::new(Mutex::new(Vec::new()));
+  let ipc_listeners = ipc_listeners_override.unwrap_or_else(|| Arc::new(Mutex::new(Vec::new())));
   if let Some(ipc_handler) = builder_ipc_handler {
     ipc_listeners.lock().unwrap().push(ipc_handler);
+  }
+  for handler in additional_handlers {
+    ipc_listeners.lock().unwrap().push(handler);
   }
 
   let listeners_clone = ipc_listeners.clone();
   let webview_builder = webview_builder.with_ipc_handler(move |req| {
     let msg = req.into_body();
     println!("Rust raw IPC msg: {}", msg);
-    let mut listeners = listeners_clone.lock().unwrap();
-
-    // Clean up dropped listeners if any and notify others
-    let mut i = 0;
-    while i < listeners.len() {
-      let status = listeners[i].call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
-      if status == napi::Status::Closing {
-        listeners.remove(i);
-        continue;
-      }
-      i += 1;
+    
+    // Check if we have any listeners registered
+    let listener_count = {
+      let listeners = listeners_clone.lock().unwrap();
+      listeners.len()
+    };
+    println!("Number of IPC listeners: {}", listener_count);
+    
+    if listener_count == 0 {
+      return;
+    }
+    
+    // Call each listener with the message
+    let listeners = listeners_clone.lock().unwrap();
+    for (idx, listener) in listeners.iter().enumerate() {
+      println!("Calling listener #{}", idx);
+      let status = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+      println!("Listener #{} call returned status: {:?}", idx, status);
     }
   });
 

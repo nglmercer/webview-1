@@ -3,6 +3,9 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
+#[napi]
+pub type IpcHandler = ThreadsafeFunction<String>;
+
 #[allow(unused_imports)]
 use crate::tao::enums::{TaoControlFlow, TaoFullscreenType, TaoTheme};
 use crate::tao::structs::Position;
@@ -151,7 +154,7 @@ type PendingWindow = (
 type PendingWebview = (
   WebviewOptions,
   Arc<Mutex<Option<crate::wry::structs::WebView>>>,
-  Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
+  Arc<Mutex<Vec<crate::wry::structs::IpcHandler>>>,
 );
 
 #[napi]
@@ -290,15 +293,8 @@ impl Application {
                   };
                   let _ = builder.with_initialization_script(init_script);
                 }
-                // Set IPC listeners if provided
-                let listeners = ipc_listeners.lock().unwrap();
-                for listener in listeners.iter() {
-                  // Clone the listener to avoid ownership issues
-                  let _ = builder.with_ipc_handler(listener.clone());
-                }
-                drop(listeners);
-
-                if let Ok(webview) = builder.build_on_window(handle.as_ref().unwrap(), "webview".to_string()) {
+                // Build the webview - pass the ipc_listeners Arc directly to setup_ipc_handler
+                if let Ok(webview) = builder.build_on_window(handle.as_ref().unwrap(), "webview".to_string(), Some(ipc_listeners.clone())) {
                   let mut wv_handle = webview_handle.lock().unwrap();
                   *wv_handle = Some(webview);
                 }
@@ -445,13 +441,6 @@ pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview>
   pub fn set_minimizable(&self, _minimizable: bool) {}
 
   #[napi]
-  pub fn set_resizable(&self, resizable: bool) {
-    if let Some(win) = self.inner.lock().unwrap().as_ref() {
-      let _ = win.set_resizable(resizable);
-    }
-  }
-
-  #[napi]
   pub fn set_title(&self, title: String) {
     if let Some(win) = self.inner.lock().unwrap().as_ref() {
       let _ = win.set_title(title);
@@ -594,14 +583,6 @@ pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview>
   }
 
   #[napi]
-  pub fn set_fullscreen(&self, _fullscreen_type: Option<FullscreenType>) {}
-
-  #[napi]
-  pub fn hide(&self) {
-    self.set_visible(false);
-  }
-
-  #[napi]
   pub fn show(&self) {
     self.set_visible(true);
   }
@@ -611,15 +592,15 @@ pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview>
 pub struct Webview {
   #[allow(clippy::arc_with_non_send_sync)]
   inner: Arc<Mutex<Option<crate::wry::structs::WebView>>>,
-  ipc_listeners: Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
+  ipc_listeners: Arc<Mutex<Vec<crate::wry::structs::IpcHandler>>>,
 }
 
 #[napi]
 impl Webview {
   #[napi]
-  pub fn on_ipc_message(&self, handler: Option<ThreadsafeFunction<String>>) {
+  pub fn on_ipc_message(&self, handler: Option<crate::wry::structs::IpcHandler>) {
     if let Some(h) = handler {
-      // Add the handler to the listeners list
+      // Add handler to listeners list
       self.ipc_listeners.lock().unwrap().push(h);
     }
   }

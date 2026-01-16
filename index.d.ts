@@ -22,7 +22,6 @@ export declare class BrowserWindow {
   setClosable(closable: boolean): void
   setMaximizable(maximizable: boolean): void
   setMinimizable(minimizable: boolean): void
-  setResizable(resizable: boolean): void
   setTitle(title: string): void
   get title(): string
   get theme(): Theme
@@ -41,8 +40,6 @@ export declare class BrowserWindow {
   setAlwaysOnBottom(enabled: boolean): void
   setDecorations(enabled: boolean): void
   get fullscreen(): FullscreenType | null
-  setFullscreen(fullscreenType?: FullscreenType | undefined | null): void
-  hide(): void
   show(): void
 }
 
@@ -88,7 +85,7 @@ export declare class WebContext {
 }
 
 export declare class Webview {
-  onIpcMessage(handler?: (((err: Error | null, arg: string) => any)) | undefined | null): void
+  onIpcMessage(handler?: IpcHandler | undefined | null): void
   loadUrl(url: string): void
   loadHtml(html: string): void
   evaluateScript(js: string): void
@@ -177,10 +174,12 @@ export declare class WebViewBuilder {
   withBackgroundColor(color: Buffer): this
   /** Sets the IPC handler for the webview. */
   withIpcHandler(callback: (error: Error | null, message: string) => void): this
+  /** Adds multiple IPC handlers for the webview. */
+  withIpcHandlers(handlers: Array<IpcHandler>): this
   /** Builds the webview on an existing window. */
-  buildOnWindow(window: Window, label: string): WebView
+  buildOnWindow(window: Window, label: string, ipcListenersOverride?: Array<IpcHandler> | undefined | null): WebView
   /** Builds the webview. */
-  build(eventLoop: EventLoop, label: string): WebView
+  build(eventLoop: EventLoop, label: string, ipcListenersOverride?: Array<IpcHandler> | undefined | null): WebView
 }
 
 /** Window for displaying content. */
@@ -519,6 +518,9 @@ export interface InitializationScript {
   /** Whether to run the script only once. */
   once: boolean
 }
+
+export type IpcHandler =
+  ((err: Error | null, arg: string) => any)
 
 export interface IpcMessage {
   body: Buffer
