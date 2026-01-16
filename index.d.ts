@@ -183,6 +183,18 @@ export declare class WebViewBuilder {
   withDragDrop(dragDrop: boolean): this
   /** Sets the background color of the webview. */
   withBackgroundColor(color: Buffer): this
+  /** Sets whether to enable devtools. */
+  withDevtools(devtools: boolean): this
+  /** Sets whether to enable incognito mode. */
+  withIncognito(incognito: boolean): this
+  /** Sets whether to enable zoom hotkeys. */
+  withHotkeysZoom(hotkeysZoom: boolean): this
+  /** Sets whether to enable clipboard access. */
+  withClipboard(clipboard: boolean): this
+  /** Sets whether to enable autoplay. */
+  withAutoplay(autoplay: boolean): this
+  /** Sets whether to enable back/forward navigation gestures. */
+  withBackForwardNavigationGestures(backForwardNavigationGestures: boolean): this
   /** Sets the IPC handler for the webview. */
   withIpcHandler(callback: (error: Error | null, message: string) => void): this
   /** Adds multiple IPC handlers for the webview. */
@@ -1316,6 +1328,18 @@ export interface WebViewAttributes {
   dragDrop: boolean
   /** The background color of the webview. */
   backgroundColor?: Buffer
+  /** Whether to enable devtools. */
+  devtools: boolean
+  /** Whether to enable incognito mode. */
+  incognito: boolean
+  /** Whether to enable zoom hotkeys. */
+  hotkeysZoom: boolean
+  /** Whether to enable clipboard access. */
+  clipboard: boolean
+  /** Whether to enable autoplay. */
+  autoplay: boolean
+  /** Whether to enable back/forward navigation gestures. */
+  backForwardNavigationGestures: boolean
 }
 
 export interface WebviewOptions {

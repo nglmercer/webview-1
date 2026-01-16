@@ -189,6 +189,18 @@ pub struct WebViewAttributes {
   pub drag_drop: bool,
   /// The background color of the webview.
   pub background_color: Option<Buffer>,
+  /// Whether to enable devtools.
+  pub devtools: bool,
+  /// Whether to enable incognito mode.
+  pub incognito: bool,
+  /// Whether to enable zoom hotkeys.
+  pub hotkeys_zoom: bool,
+  /// Whether to enable clipboard access.
+  pub clipboard: bool,
+  /// Whether to enable autoplay.
+  pub autoplay: bool,
+  /// Whether to enable back/forward navigation gestures.
+  pub back_forward_navigation_gestures: bool,
 }
 
 pub type IpcHandler = ThreadsafeFunction<String>;
@@ -232,6 +244,12 @@ impl WebViewBuilder {
         initialization_scripts: Vec::new(),
         drag_drop: true,
         background_color: None,
+        devtools: true,
+        incognito: false,
+        hotkeys_zoom: true,
+        clipboard: true,
+        autoplay: true,
+        back_forward_navigation_gestures: false,
       },
       ipc_handler: None,
       ipc_handlers: Vec::new(),
@@ -393,6 +411,51 @@ impl WebViewBuilder {
     Ok(self)
   }
 
+  /// Sets whether to enable devtools.
+  #[napi]
+  pub fn with_devtools(&mut self, devtools: bool) -> Result<&Self> {
+    self.attributes.devtools = devtools;
+    Ok(self)
+  }
+
+  /// Sets whether to enable incognito mode.
+  #[napi]
+  pub fn with_incognito(&mut self, incognito: bool) -> Result<&Self> {
+    self.attributes.incognito = incognito;
+    Ok(self)
+  }
+
+  /// Sets whether to enable zoom hotkeys.
+  #[napi]
+  pub fn with_hotkeys_zoom(&mut self, hotkeys_zoom: bool) -> Result<&Self> {
+    self.attributes.hotkeys_zoom = hotkeys_zoom;
+    Ok(self)
+  }
+
+  /// Sets whether to enable clipboard access.
+  #[napi]
+  pub fn with_clipboard(&mut self, clipboard: bool) -> Result<&Self> {
+    self.attributes.clipboard = clipboard;
+    Ok(self)
+  }
+
+  /// Sets whether to enable autoplay.
+  #[napi]
+  pub fn with_autoplay(&mut self, autoplay: bool) -> Result<&Self> {
+    self.attributes.autoplay = autoplay;
+    Ok(self)
+  }
+
+  /// Sets whether to enable back/forward navigation gestures.
+  #[napi]
+  pub fn with_back_forward_navigation_gestures(
+    &mut self,
+    back_forward_navigation_gestures: bool,
+  ) -> Result<&Self> {
+    self.attributes.back_forward_navigation_gestures = back_forward_navigation_gestures;
+    Ok(self)
+  }
+
   /// Sets the IPC handler for the webview.
   #[napi(ts_args_type = "callback: (error: Error | null, message: string) => void")]
   pub fn with_ipc_handler(&mut self, callback: IpcHandler) -> Result<&Self> {
@@ -424,7 +487,29 @@ impl WebViewBuilder {
     let window_inner = window_lock.lock().unwrap();
 
     // Create webview builder
+    println!("Building webview on window with transparency: {}", self.attributes.transparent);
     let mut webview_builder = wry::WebViewBuilder::new();
+
+    // Set transparency and background color
+    // On Windows, with_transparent(true) enables the capability, 
+    // and with_background_color([0, 0, 0, 0]) sets the actual transparency.
+    webview_builder = webview_builder.with_transparent(self.attributes.transparent);
+
+    if let Some(bg_color) = &self.attributes.background_color {
+      if bg_color.len() >= 4 {
+        webview_builder =
+          webview_builder.with_background_color((bg_color[0], bg_color[1], bg_color[2], bg_color[3]));
+      }
+    } else if self.attributes.transparent {
+      // Explicitly transparent background if transparent is requested and no color provided
+      webview_builder = webview_builder.with_background_color((0, 0, 0, 0));
+    }
+
+    // Set bounds if provided
+    webview_builder = webview_builder.with_bounds(wry::Rect {
+      position: tao::dpi::LogicalPosition::new(self.attributes.x as f64, self.attributes.y as f64).into(),
+      size: tao::dpi::LogicalSize::new(self.attributes.width as f64, self.attributes.height as f64).into(),
+    });
 
     // Set URL or HTML
     if let Some(url) = &self.attributes.url {
@@ -432,6 +517,25 @@ impl WebViewBuilder {
     } else if let Some(html) = &self.attributes.html {
       webview_builder = webview_builder.with_html(html);
     }
+
+    webview_builder = webview_builder.with_devtools(self.attributes.devtools);
+
+    // Set other attributes
+    webview_builder = webview_builder.with_hotkeys_zoom(self.attributes.hotkeys_zoom);
+    #[cfg(any(
+      target_os = "windows",
+      target_os = "macos",
+      target_os = "ios",
+      target_os = "android"
+    ))]
+    {
+      webview_builder = webview_builder.with_incognito(self.attributes.incognito);
+    }
+    webview_builder = webview_builder.with_autoplay(self.attributes.autoplay);
+    webview_builder = webview_builder.with_clipboard(self.attributes.clipboard);
+    webview_builder = webview_builder.with_back_forward_navigation_gestures(
+      self.attributes.back_forward_navigation_gestures,
+    );
 
     // Apply initialization scripts
     for script in &self.attributes.initialization_scripts {
@@ -575,12 +679,50 @@ impl WebViewBuilder {
     // Create webview builder
     let mut webview_builder = wry::WebViewBuilder::new();
 
+    // Set transparency and background color
+    webview_builder = webview_builder.with_transparent(self.attributes.transparent);
+
+    if let Some(bg_color) = &self.attributes.background_color {
+      if bg_color.len() >= 4 {
+        webview_builder =
+          webview_builder.with_background_color((bg_color[0], bg_color[1], bg_color[2], bg_color[3]));
+      }
+    } else if self.attributes.transparent {
+      // Explicitly transparent background if transparent is requested and no color provided
+      webview_builder = webview_builder.with_background_color((0, 0, 0, 0));
+    }
+
+    // Set bounds
+    webview_builder = webview_builder.with_bounds(wry::Rect {
+      position: tao::dpi::LogicalPosition::new(self.attributes.x as f64, self.attributes.y as f64).into(),
+      size: tao::dpi::LogicalSize::new(self.attributes.width as f64, self.attributes.height as f64).into(),
+    });
+
     // Set URL or HTML
     if let Some(url) = &self.attributes.url {
       webview_builder = webview_builder.with_url(url);
     } else if let Some(html) = &self.attributes.html {
       webview_builder = webview_builder.with_html(html);
     }
+    
+    webview_builder = webview_builder.with_devtools(self.attributes.devtools);
+
+    // Set other attributes
+    webview_builder = webview_builder.with_hotkeys_zoom(self.attributes.hotkeys_zoom);
+    #[cfg(any(
+      target_os = "windows",
+      target_os = "macos",
+      target_os = "ios",
+      target_os = "android"
+    ))]
+    {
+      webview_builder = webview_builder.with_incognito(self.attributes.incognito);
+    }
+    webview_builder = webview_builder.with_autoplay(self.attributes.autoplay);
+    webview_builder = webview_builder.with_clipboard(self.attributes.clipboard);
+    webview_builder = webview_builder.with_back_forward_navigation_gestures(
+      self.attributes.back_forward_navigation_gestures,
+    );
 
     // Apply initialization scripts
     for script in &self.attributes.initialization_scripts {
@@ -812,14 +954,12 @@ fn setup_ipc_handler(
   let listeners_clone = ipc_listeners.clone();
   let webview_builder = webview_builder.with_ipc_handler(move |req| {
     let msg = req.into_body();
-    println!("Rust raw IPC msg: {}", msg);
     
     // Check if we have any listeners registered
     let listener_count = {
       let listeners = listeners_clone.lock().unwrap();
       listeners.len()
     };
-    println!("Number of IPC listeners: {}", listener_count);
     
     if listener_count == 0 {
       return;
@@ -828,9 +968,9 @@ fn setup_ipc_handler(
     // Call each listener with the message using Blocking mode for immediate execution
     let listeners = listeners_clone.lock().unwrap();
     for (idx, listener) in listeners.iter().enumerate() {
-      println!("Calling listener #{}", idx);
       let status = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
       println!("Listener #{} call returned status: {:?}", idx, status);
+      //Ok(idx, status);
     }
   });
 

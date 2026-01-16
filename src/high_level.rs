@@ -9,6 +9,18 @@ pub type IpcHandler = ThreadsafeFunction<String>;
 #[allow(unused_imports)]
 use crate::tao::enums::{TaoControlFlow, TaoFullscreenType, TaoTheme};
 use crate::tao::structs::Position;
+#[cfg(target_os = "windows")]
+use tao::platform::windows::WindowBuilderExtWindows;
+#[cfg(target_os = "macos")]
+use tao::platform::macos::WindowBuilderExtMacOS;
+#[cfg(any(
+  target_os = "linux",
+  target_os = "dragonfly",
+  target_os = "freebsd",
+  target_os = "netbsd",
+  target_os = "openbsd"
+))]
+use tao::platform::unix::WindowBuilderExtUnix;
 
 #[napi]
 pub enum WebviewApplicationEvent {
@@ -251,7 +263,33 @@ impl Application {
         ))
         .with_resizable(opts.resizable.unwrap_or(true))
         .with_decorations(opts.decorations.unwrap_or(true))
+        .with_always_on_top(opts.always_on_top.unwrap_or(false))
+        .with_maximized(opts.maximized.unwrap_or(false))
+        .with_focused(opts.focused.unwrap_or(true))
+        .with_transparent(opts.transparent.unwrap_or(false))
         .with_visible(opts.visible.unwrap_or(true));
+
+      if opts.transparent.unwrap_or(false) {
+        #[cfg(target_os = "windows")]
+        {
+          builder = builder.with_undecorated_shadow(false);
+        }
+        #[cfg(target_os = "macos")]
+        {
+          builder = builder.with_titlebar_transparent(true)
+            .with_fullsize_content_view(true);
+        }
+        #[cfg(any(
+          target_os = "linux",
+          target_os = "dragonfly",
+          target_os = "freebsd",
+          target_os = "netbsd",
+          target_os = "openbsd"
+        ))]
+        {
+          builder = builder.with_rgba_visual(true);
+        }
+      }
 
       if let Some(x) = opts.x {
         if let Some(y) = opts.y {
@@ -290,6 +328,27 @@ impl Application {
             }
             if let Some(user_agent) = webview_opts.user_agent {
               let _ = builder.with_user_agent(user_agent);
+            }
+            if let Some(transparent) = webview_opts.transparent {
+              let _ = builder.with_transparent(transparent);
+            }
+            if let Some(devtools) = webview_opts.enable_devtools {
+              let _ = builder.with_devtools(devtools);
+            }
+            if let Some(incognito) = webview_opts.incognito {
+              let _ = builder.with_incognito(incognito);
+            }
+            if let Some(hotkeys_zoom) = webview_opts.hotkeys_zoom {
+              let _ = builder.with_hotkeys_zoom(hotkeys_zoom);
+            }
+            if let Some(clipboard) = webview_opts.clipboard {
+              let _ = builder.with_clipboard(clipboard);
+            }
+            if let Some(autoplay) = webview_opts.autoplay {
+              let _ = builder.with_autoplay(autoplay);
+            }
+            if let Some(back_forward_navigation_gestures) = webview_opts.back_forward_navigation_gestures {
+              let _ = builder.with_back_forward_navigation_gestures(back_forward_navigation_gestures);
             }
             // Apply preload script as initialization script
             if let Some(preload) = webview_opts.preload {
