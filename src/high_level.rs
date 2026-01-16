@@ -6,6 +6,17 @@ use std::sync::{Arc, Mutex};
 #[napi]
 pub type IpcHandler = ThreadsafeFunction<String>;
 
+/// Represents a pending action to be applied to a webview once it's initialized.
+pub(crate) enum PendingWebviewAction {
+  LoadUrl(String),
+  LoadHtml(String),
+  EvaluateScript(String),
+  OpenDevtools,
+  CloseDevtools,
+  Reload,
+  Print,
+}
+
 #[allow(unused_imports)]
 use crate::tao::enums::{TaoControlFlow, TaoFullscreenType, TaoTheme};
 use crate::tao::structs::Position;
@@ -167,6 +178,7 @@ type PendingWebview = (
   WebviewOptions,
   Arc<Mutex<Option<crate::wry::structs::WebView>>>,
   Arc<Mutex<Vec<crate::wry::structs::IpcHandler>>>,
+  Arc<Mutex<Vec<PendingWebviewAction>>>,
 );
 
 #[napi]
@@ -307,7 +319,9 @@ impl Application {
 
         // Create pending webviews for this window
         let mut pending_webviews = webviews_to_create.lock().unwrap();
-        for (webview_opts, webview_handle, ipc_listeners) in pending_webviews.drain(..) {
+        for (webview_opts, webview_handle, ipc_listeners, pending_actions) in
+          pending_webviews.drain(..)
+        {
           if let Ok(mut builder) = crate::wry::structs::WebViewBuilder::new() {
             if let Some(url) = webview_opts.url {
               let _ = builder.with_url(url);
@@ -370,6 +384,9 @@ impl Application {
             ) {
               let mut wv_handle = webview_handle.lock().unwrap();
               *wv_handle = Some(webview);
+
+              // Apply any pending actions that were called before the webview was initialized
+              apply_pending_actions(wv_handle.as_ref().unwrap(), &pending_actions);
             }
           }
         }
@@ -498,6 +515,7 @@ impl BrowserWindow {
     #[allow(clippy::arc_with_non_send_sync)]
     let inner = Arc::new(Mutex::new(None));
     let ipc_listeners = Arc::new(Mutex::new(Vec::new()));
+    let pending_actions = Arc::new(Mutex::new(Vec::new()));
     let options = options.unwrap_or(WebviewOptions {
       url: None,
       html: None,
@@ -518,15 +536,17 @@ impl BrowserWindow {
       back_forward_navigation_gestures: None,
     });
 
-    self
-      .webviews_to_create
-      .lock()
-      .unwrap()
-      .push((options, inner.clone(), ipc_listeners.clone()));
+    self.webviews_to_create.lock().unwrap().push((
+      options,
+      inner.clone(),
+      ipc_listeners.clone(),
+      pending_actions.clone(),
+    ));
 
     Ok(Webview {
       inner,
       ipc_listeners,
+      pending_actions,
     })
   }
 
@@ -756,6 +776,43 @@ pub struct Webview {
   #[allow(clippy::arc_with_non_send_sync)]
   inner: Arc<Mutex<Option<crate::wry::structs::WebView>>>,
   ipc_listeners: Arc<Mutex<Vec<crate::wry::structs::IpcHandler>>>,
+  #[allow(clippy::arc_with_non_send_sync)]
+  pending_actions: Arc<Mutex<Vec<PendingWebviewAction>>>,
+}
+
+/// Applies all pending actions to the webview after it's been initialized.
+fn apply_pending_actions(
+  webview: &crate::wry::structs::WebView,
+  pending_actions: &Arc<Mutex<Vec<PendingWebviewAction>>>,
+) {
+  let mut actions = pending_actions.lock().unwrap();
+  let actions_vec = std::mem::take(&mut *actions);
+  drop(actions);
+  for action in actions_vec {
+    match action {
+      PendingWebviewAction::LoadUrl(url) => {
+        let _ = webview.load_url(url);
+      }
+      PendingWebviewAction::LoadHtml(html) => {
+        let _ = webview.load_html(html);
+      }
+      PendingWebviewAction::EvaluateScript(js) => {
+        let _ = webview.evaluate_script(js);
+      }
+      PendingWebviewAction::OpenDevtools => {
+        let _ = webview.open_devtools();
+      }
+      PendingWebviewAction::CloseDevtools => {
+        let _ = webview.close_devtools();
+      }
+      PendingWebviewAction::Reload => {
+        let _ = webview.reload();
+      }
+      PendingWebviewAction::Print => {
+        let _ = webview.print();
+      }
+    }
+  }
 }
 
 #[napi]
@@ -804,6 +861,12 @@ impl Webview {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       webview.load_url(url)
     } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::LoadUrl(url));
       Ok(())
     }
   }
@@ -813,6 +876,12 @@ impl Webview {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       webview.load_html(html)
     } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::LoadHtml(html));
       Ok(())
     }
   }
@@ -822,6 +891,12 @@ impl Webview {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       webview.evaluate_script(js)
     } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::EvaluateScript(js));
       Ok(())
     }
   }
@@ -830,6 +905,13 @@ impl Webview {
   pub fn open_devtools(&self) {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       let _ = webview.open_devtools();
+    } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::OpenDevtools);
     }
   }
 
@@ -837,6 +919,13 @@ impl Webview {
   pub fn close_devtools(&self) {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       let _ = webview.close_devtools();
+    } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::CloseDevtools);
     }
   }
 
@@ -845,7 +934,11 @@ impl Webview {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       webview.is_devtools_open().unwrap_or(false)
     } else {
-      false
+      // Check if we have a pending OpenDevtools action
+      let pending = self.pending_actions.lock().unwrap();
+      pending
+        .iter()
+        .any(|action| matches!(action, PendingWebviewAction::OpenDevtools))
     }
   }
 
@@ -853,6 +946,13 @@ impl Webview {
   pub fn reload(&self) {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       let _ = webview.reload();
+    } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::Reload);
     }
   }
 
@@ -860,6 +960,13 @@ impl Webview {
   pub fn print(&self) {
     if let Some(webview) = self.inner.lock().unwrap().as_ref() {
       let _ = webview.print();
+    } else {
+      // Queue the action to be applied when the webview is initialized
+      self
+        .pending_actions
+        .lock()
+        .unwrap()
+        .push(PendingWebviewAction::Print);
     }
   }
 }

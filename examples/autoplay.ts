@@ -1,5 +1,4 @@
-// const requireScript = require('node:module').createRequire(__filename);
-// const { Application } = requireScript('../index.js');
+// Autoplay
 import { Application } from "../index.js";
 const app = new Application();
 const window = app.createBrowserWindow();
@@ -12,12 +11,9 @@ const webview = window.createWebview({
         </head>
         <body>
             <h1 id="output">Hello world!</h1>
-            <button id="btn">Click me!</button>
-            <script>
-                btn.onclick = function send() {
-                    window.ipc.postMessage('Hello from webview');
-                }
-            </script>
+            <video autoplay>
+                <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+            </video>
         </body>
     </html>
     `,
@@ -29,13 +25,6 @@ const webview = window.createWebview({
 
 //if (!webview.isDevtoolsOpen()) webview.openDevtools();
 
-// Register IPC handler BEFORE running the app
-webview.onIpcMessage((_e,data) => {
-    const reply = `You sent ${data}`;
-    console.log("reply",reply);
-    webview.evaluateScript(`onIpcMessage("${reply}")`);
-});
-
 // Now run the app with a polling loop to allow IPC callbacks to process
 const poll = () => {
     if (app.runIteration()) {
@@ -46,5 +35,8 @@ const poll = () => {
         process.exit(0);
     }
 };
+setInterval(() => {
+    console.log("polling");
+}, 1000);
 poll();
 //app.run();
