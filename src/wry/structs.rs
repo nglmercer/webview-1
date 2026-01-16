@@ -5,7 +5,6 @@
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::tao::structs::EventLoop;
@@ -109,7 +108,8 @@ pub struct RequestAsyncResponder {
 /// The web context for a webview.
 #[napi]
 pub struct WebContext {
-  inner: Rc<Mutex<wry::WebContext>>,
+  #[allow(clippy::arc_with_non_send_sync)]
+  inner: Arc<Mutex<wry::WebContext>>,
 }
 
 #[napi]
@@ -123,7 +123,8 @@ impl WebContext {
       wry::WebContext::new(None)
     };
     Ok(Self {
-      inner: Rc::new(Mutex::new(context)),
+      #[allow(clippy::arc_with_non_send_sync)]
+      inner: Arc::new(Mutex::new(context)),
     })
   }
 
@@ -463,8 +464,12 @@ impl WebViewBuilder {
       }
 
       // IPC Handler
-      let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
+      let (webview_builder_with_ipc, listeners) = setup_ipc_handler(
+        self.ipc_handler.take(),
+        self.ipc_handlers.drain(..).collect(),
+        webview_builder,
+        ipc_listeners_override,
+      );
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -479,8 +484,10 @@ impl WebViewBuilder {
         gtk_widget_show_all(window_ptr_raw);
       }
 
+      #[allow(clippy::arc_with_non_send_sync)]
+      let webview_inner = Arc::new(Mutex::new(webview));
       Ok(WebView {
-        inner: Some(Rc::new(Mutex::new(webview))),
+        inner: Some(webview_inner),
         label,
         ipc_listeners,
       })
@@ -495,8 +502,12 @@ impl WebViewBuilder {
     )))]
     {
       // IPC Handler
-      let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
+      let (webview_builder_with_ipc, listeners) = setup_ipc_handler(
+        self.ipc_handler.take(),
+        self.ipc_handlers.drain(..).collect(),
+        webview_builder,
+        ipc_listeners_override,
+      );
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -506,8 +517,10 @@ impl WebViewBuilder {
           format!("Failed to create webview: {}", e),
         )
       })?;
+      #[allow(clippy::arc_with_non_send_sync)]
+      let webview_inner = Arc::new(Mutex::new(webview));
       Ok(WebView {
-        inner: Some(Rc::new(Mutex::new(webview))),
+        inner: Some(webview_inner),
         label,
         ipc_listeners,
       })
@@ -516,7 +529,12 @@ impl WebViewBuilder {
 
   /// Builds the webview.
   #[napi]
-  pub fn build(&mut self, event_loop: &EventLoop, label: String, ipc_listeners_override: Option<Arc<Mutex<Vec<IpcHandler>>>>) -> Result<WebView> {
+  pub fn build(
+    &mut self,
+    event_loop: &EventLoop,
+    label: String,
+    ipc_listeners_override: Option<Arc<Mutex<Vec<IpcHandler>>>>,
+  ) -> Result<WebView> {
     // Get the event loop reference
     let el = event_loop.inner.as_ref().ok_or_else(|| {
       napi::Error::new(
@@ -595,8 +613,12 @@ impl WebViewBuilder {
       }
 
       // IPC Handler
-      let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
+      let (webview_builder_with_ipc, listeners) = setup_ipc_handler(
+        self.ipc_handler.take(),
+        self.ipc_handlers.drain(..).collect(),
+        webview_builder,
+        ipc_listeners_override,
+      );
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -611,8 +633,10 @@ impl WebViewBuilder {
         gtk_widget_show_all(window_ptr_raw);
       }
 
+      #[allow(clippy::arc_with_non_send_sync)]
+      let webview_inner = Arc::new(Mutex::new(webview));
       Ok(WebView {
-        inner: Some(Rc::new(Mutex::new(webview))),
+        inner: Some(webview_inner),
         label,
         ipc_listeners,
       })
@@ -627,8 +651,12 @@ impl WebViewBuilder {
     )))]
     {
       // IPC Handler
-      let (webview_builder_with_ipc, listeners) =
-        setup_ipc_handler(self.ipc_handler.take(), self.ipc_handlers.drain(..).collect(), webview_builder, ipc_listeners_override);
+      let (webview_builder_with_ipc, listeners) = setup_ipc_handler(
+        self.ipc_handler.take(),
+        self.ipc_handlers.drain(..).collect(),
+        webview_builder,
+        ipc_listeners_override,
+      );
       let ipc_listeners = listeners;
       webview_builder = webview_builder_with_ipc;
 
@@ -638,8 +666,10 @@ impl WebViewBuilder {
           format!("Failed to create webview: {}", e),
         )
       })?;
+      #[allow(clippy::arc_with_non_send_sync)]
+      let webview_inner = Arc::new(Mutex::new(webview));
       Ok(WebView {
-        inner: Some(Rc::new(Mutex::new(webview))),
+        inner: Some(webview_inner),
         label,
         ipc_listeners,
       })
@@ -650,8 +680,8 @@ impl WebViewBuilder {
 /// The main webview struct.
 #[napi]
 pub struct WebView {
-  #[allow(dead_code)]
-  pub(crate) inner: Option<Rc<Mutex<wry::WebView>>>,
+  #[allow(clippy::arc_with_non_send_sync)]
+  pub(crate) inner: Option<Arc<Mutex<wry::WebView>>>,
   label: String,
   pub(crate) ipc_listeners: Arc<Mutex<Vec<IpcHandler>>>,
 }
@@ -770,10 +800,7 @@ fn setup_ipc_handler(
   additional_handlers: Vec<IpcHandler>,
   webview_builder: wry::WebViewBuilder<'static>,
   ipc_listeners_override: Option<Arc<Mutex<Vec<IpcHandler>>>>,
-) -> (
-  wry::WebViewBuilder<'static>,
-  Arc<Mutex<Vec<IpcHandler>>>,
-) {
+) -> (wry::WebViewBuilder<'static>, Arc<Mutex<Vec<IpcHandler>>>) {
   let ipc_listeners = ipc_listeners_override.unwrap_or_else(|| Arc::new(Mutex::new(Vec::new())));
   if let Some(ipc_handler) = builder_ipc_handler {
     ipc_listeners.lock().unwrap().push(ipc_handler);
@@ -798,11 +825,11 @@ fn setup_ipc_handler(
       return;
     }
     
-    // Call each listener with the message
+    // Call each listener with the message using Blocking mode for immediate execution
     let listeners = listeners_clone.lock().unwrap();
     for (idx, listener) in listeners.iter().enumerate() {
       println!("Calling listener #{}", idx);
-      let status = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+      let status = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::Blocking);
       println!("Listener #{} call returned status: {:?}", idx, status);
     }
   });

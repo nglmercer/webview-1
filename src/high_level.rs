@@ -163,6 +163,7 @@ pub struct Application {
   event_loop: Arc<Mutex<Option<tao::event_loop::EventLoop<()>>>>,
   event_loop_proxy: tao::event_loop::EventLoopProxy<()>,
   handler: Arc<Mutex<Option<ThreadsafeFunction<ApplicationEvent>>>>,
+  #[allow(clippy::arc_with_non_send_sync)]
   windows_to_create: Arc<Mutex<Vec<PendingWindow>>>,
   exit_requested: Arc<Mutex<bool>>,
 }
@@ -178,6 +179,7 @@ impl Application {
       event_loop: Arc::new(Mutex::new(Some(event_loop))),
       event_loop_proxy,
       handler: Arc::new(Mutex::new(None)),
+      #[allow(clippy::arc_with_non_send_sync)]
       windows_to_create: Arc::new(Mutex::new(Vec::new())),
       exit_requested: Arc::new(Mutex::new(false)),
     }
@@ -195,7 +197,9 @@ impl Application {
 
   #[napi]
   pub fn create_browser_window(&self, options: Option<BrowserWindowOptions>) -> BrowserWindow {
+    #[allow(clippy::arc_with_non_send_sync)]
     let inner = Arc::new(Mutex::new(None));
+    #[allow(clippy::arc_with_non_send_sync)]
     let webviews_to_create = Arc::new(Mutex::new(Vec::new()));
     let options = options.unwrap_or(BrowserWindowOptions {
       resizable: Some(true),
@@ -218,13 +222,16 @@ impl Application {
       fullscreen: None,
     });
 
-    self
-      .windows_to_create
-      .lock()
-      .unwrap()
-      .push((options, inner.clone(), webviews_to_create.clone()));
+    self.windows_to_create.lock().unwrap().push((
+      options,
+      inner.clone(),
+      webviews_to_create.clone(),
+    ));
 
-    BrowserWindow { inner, webviews_to_create }
+    BrowserWindow {
+      inner,
+      webviews_to_create,
+    }
   }
 
   #[napi]
@@ -294,7 +301,11 @@ impl Application {
                   let _ = builder.with_initialization_script(init_script);
                 }
                 // Build the webview - pass the ipc_listeners Arc directly to setup_ipc_handler
-                if let Ok(webview) = builder.build_on_window(handle.as_ref().unwrap(), "webview".to_string(), Some(ipc_listeners.clone())) {
+                if let Ok(webview) = builder.build_on_window(
+                  handle.as_ref().unwrap(),
+                  "webview".to_string(),
+                  Some(ipc_listeners.clone()),
+                ) {
                   let mut wv_handle = webview_handle.lock().unwrap();
                   *wv_handle = Some(webview);
                 }
@@ -334,38 +345,42 @@ pub struct BrowserWindow {
 
 #[napi]
 impl BrowserWindow {
-#[napi]
-pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview> {
-  let inner = Arc::new(Mutex::new(None));
-  let ipc_listeners = Arc::new(Mutex::new(Vec::new()));
-  let options = options.unwrap_or(WebviewOptions {
-    url: None,
-    html: None,
-    width: None,
-    height: None,
-    x: None,
-    y: None,
-    enable_devtools: None,
-    incognito: None,
-    user_agent: None,
-    child: None,
-    preload: None,
-    transparent: None,
-    theme: None,
-    hotkeys_zoom: None,
-    clipboard: None,
-    autoplay: None,
-    back_forward_navigation_gestures: None,
-  });
+  #[napi]
+  pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview> {
+    #[allow(clippy::arc_with_non_send_sync)]
+    let inner = Arc::new(Mutex::new(None));
+    let ipc_listeners = Arc::new(Mutex::new(Vec::new()));
+    let options = options.unwrap_or(WebviewOptions {
+      url: None,
+      html: None,
+      width: None,
+      height: None,
+      x: None,
+      y: None,
+      enable_devtools: None,
+      incognito: None,
+      user_agent: None,
+      child: None,
+      preload: None,
+      transparent: None,
+      theme: None,
+      hotkeys_zoom: None,
+      clipboard: None,
+      autoplay: None,
+      back_forward_navigation_gestures: None,
+    });
 
-  self
-    .webviews_to_create
-    .lock()
-    .unwrap()
-    .push((options, inner.clone(), ipc_listeners.clone()));
+    self
+      .webviews_to_create
+      .lock()
+      .unwrap()
+      .push((options, inner.clone(), ipc_listeners.clone()));
 
-  Ok(Webview { inner, ipc_listeners })
-}
+    Ok(Webview {
+      inner,
+      ipc_listeners,
+    })
+  }
 
   #[napi(getter)]
   pub fn is_child(&self) -> bool {
