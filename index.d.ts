@@ -91,6 +91,7 @@ export declare class Webview {
   onIpcMessage(handler?: (((err: Error | null, arg: string) => any)) | undefined | null): void
   loadUrl(url: string): void
   loadHtml(html: string): void
+  evaluateScript(js: string): void
 }
 
 /** The main webview struct. */

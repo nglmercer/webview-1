@@ -145,6 +145,13 @@ pub struct WebviewOptions {
 type PendingWindow = (
   BrowserWindowOptions,
   Arc<Mutex<Option<crate::tao::structs::Window>>>,
+  Arc<Mutex<Vec<PendingWebview>>>,
+);
+
+type PendingWebview = (
+  WebviewOptions,
+  Arc<Mutex<Option<crate::wry::structs::WebView>>>,
+  Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
 );
 
 #[napi]
@@ -186,6 +193,7 @@ impl Application {
   #[napi]
   pub fn create_browser_window(&self, options: Option<BrowserWindowOptions>) -> BrowserWindow {
     let inner = Arc::new(Mutex::new(None));
+    let webviews_to_create = Arc::new(Mutex::new(Vec::new()));
     let options = options.unwrap_or(BrowserWindowOptions {
       resizable: Some(true),
       title: Some("Webview".to_string()),
@@ -211,9 +219,9 @@ impl Application {
       .windows_to_create
       .lock()
       .unwrap()
-      .push((options, inner.clone()));
+      .push((options, inner.clone(), webviews_to_create.clone()));
 
-    BrowserWindow { inner }
+    BrowserWindow { inner, webviews_to_create }
   }
 
   #[napi]
@@ -240,7 +248,7 @@ impl Application {
 
         // Handle pending windows
         let mut pending = windows_to_create.lock().unwrap();
-        for (opts, win_handle) in pending.drain(..) {
+        for (opts, win_handle, webviews_to_create) in pending.drain(..) {
           let mut builder = tao::window::WindowBuilder::new()
             .with_title(opts.title.clone().unwrap_or_default())
             .with_inner_size(tao::dpi::LogicalSize::new(
@@ -263,6 +271,40 @@ impl Application {
               #[allow(clippy::arc_with_non_send_sync)]
               inner: Some(Arc::new(Mutex::new(window))),
             });
+
+            // Create pending webviews for this window
+            let mut pending_webviews = webviews_to_create.lock().unwrap();
+            for (webview_opts, webview_handle, ipc_listeners) in pending_webviews.drain(..) {
+              if let Ok(mut builder) = crate::wry::structs::WebViewBuilder::new() {
+                if let Some(url) = webview_opts.url {
+                  let _ = builder.with_url(url);
+                }
+                if let Some(html) = webview_opts.html {
+                  let _ = builder.with_html(html);
+                }
+                // Apply preload script as initialization script
+                if let Some(preload) = webview_opts.preload {
+                  let init_script = crate::wry::structs::InitializationScript {
+                    js: preload,
+                    once: false,
+                  };
+                  let _ = builder.with_initialization_script(init_script);
+                }
+                // Set IPC listeners if provided
+                let listeners = ipc_listeners.lock().unwrap();
+                for listener in listeners.iter() {
+                  // Clone the listener to avoid ownership issues
+                  let _ = builder.with_ipc_handler(listener.clone());
+                }
+                drop(listeners);
+
+                if let Ok(webview) = builder.build_on_window(handle.as_ref().unwrap(), "webview".to_string()) {
+                  let mut wv_handle = webview_handle.lock().unwrap();
+                  *wv_handle = Some(webview);
+                }
+              }
+            }
+            drop(pending_webviews);
           }
         }
         drop(pending);
@@ -291,35 +333,43 @@ impl Application {
 #[napi]
 pub struct BrowserWindow {
   pub(crate) inner: Arc<Mutex<Option<crate::tao::structs::Window>>>,
+  pub(crate) webviews_to_create: Arc<Mutex<Vec<PendingWebview>>>,
 }
 
 #[napi]
 impl BrowserWindow {
-  #[napi]
-  pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview> {
-    let window_handle = self.inner.lock().unwrap();
-    let window = window_handle.as_ref().ok_or_else(|| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        "Window not yet initialized. call application.run() first?".to_string(),
-      )
-    })?;
+#[napi]
+pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview> {
+  let inner = Arc::new(Mutex::new(None));
+  let ipc_listeners = Arc::new(Mutex::new(Vec::new()));
+  let options = options.unwrap_or(WebviewOptions {
+    url: None,
+    html: None,
+    width: None,
+    height: None,
+    x: None,
+    y: None,
+    enable_devtools: None,
+    incognito: None,
+    user_agent: None,
+    child: None,
+    preload: None,
+    transparent: None,
+    theme: None,
+    hotkeys_zoom: None,
+    clipboard: None,
+    autoplay: None,
+    back_forward_navigation_gestures: None,
+  });
 
-    let mut builder = crate::wry::structs::WebViewBuilder::new()?;
-    if let Some(opts) = options {
-      if let Some(url) = opts.url {
-        builder.with_url(url)?;
-      }
-      if let Some(html) = opts.html {
-        builder.with_html(html)?;
-      }
-    }
+  self
+    .webviews_to_create
+    .lock()
+    .unwrap()
+    .push((options, inner.clone(), ipc_listeners.clone()));
 
-    let webview = builder.build_on_window(window, "webview".to_string())?;
-    #[allow(clippy::arc_with_non_send_sync)]
-    let inner = Arc::new(Mutex::new(webview));
-    Ok(Webview { inner })
-  }
+  Ok(Webview { inner, ipc_listeners })
+}
 
   #[napi(getter)]
   pub fn is_child(&self) -> bool {
@@ -560,7 +610,8 @@ impl BrowserWindow {
 #[napi]
 pub struct Webview {
   #[allow(clippy::arc_with_non_send_sync)]
-  inner: Arc<Mutex<crate::wry::structs::WebView>>,
+  inner: Arc<Mutex<Option<crate::wry::structs::WebView>>>,
+  ipc_listeners: Arc<Mutex<Vec<ThreadsafeFunction<String>>>>,
 }
 
 #[napi]
@@ -568,18 +619,36 @@ impl Webview {
   #[napi]
   pub fn on_ipc_message(&self, handler: Option<ThreadsafeFunction<String>>) {
     if let Some(h) = handler {
-      let _ = self.inner.lock().unwrap().on(h);
+      // Add the handler to the listeners list
+      self.ipc_listeners.lock().unwrap().push(h);
     }
   }
 
   #[napi]
   pub fn load_url(&self, url: String) -> Result<()> {
-    self.inner.lock().unwrap().load_url(url)
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.load_url(url)
+    } else {
+      Ok(())
+    }
   }
 
   #[napi]
   pub fn load_html(&self, html: String) -> Result<()> {
-    self.inner.lock().unwrap().load_html(html)
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.load_html(html)
+    } else {
+      Ok(())
+    }
+  }
+
+  #[napi]
+  pub fn evaluate_script(&self, js: String) -> Result<()> {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.evaluate_script(js)
+    } else {
+      Ok(())
+    }
   }
 }
 
