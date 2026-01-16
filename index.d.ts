@@ -7,9 +7,11 @@ export declare class Application {
   createBrowserWindow(options?: BrowserWindowOptions | undefined | null): BrowserWindow
   exit(): void
   run(): void
+  runIteration(): boolean
 }
 
 export declare class BrowserWindow {
+  get id(): string
   createWebview(options?: WebviewOptions | undefined | null): Webview
   get isChild(): boolean
   isFocused(): boolean
@@ -85,10 +87,19 @@ export declare class WebContext {
 }
 
 export declare class Webview {
+  get id(): string
+  get label(): string
   onIpcMessage(handler?: IpcHandler | undefined | null): void
+  on(handler: IpcHandler): void
+  send(message: string): void
   loadUrl(url: string): void
   loadHtml(html: string): void
   evaluateScript(js: string): void
+  openDevtools(): void
+  closeDevtools(): void
+  isDevtoolsOpen(): boolean
+  reload(): void
+  print(): void
 }
 
 /** The main webview struct. */

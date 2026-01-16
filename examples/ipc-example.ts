@@ -228,6 +228,7 @@ async function main() {
 
         setTimeout(() => {
           const reply = `ACK: ${msg} - Processed at ${new Date().toLocaleTimeString()}`
+          console.log('Sending reply to JavaScript:', reply)
           ipcManager.sendToJavaScript(reply)
         }, 500)
       })

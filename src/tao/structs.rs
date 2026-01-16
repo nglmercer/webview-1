@@ -376,7 +376,7 @@ impl EventLoop {
       {
         use tao::platform::run_return::EventLoopExtRunReturn;
         event_loop.run_return(|event, _, control_flow| {
-          *control_flow = tao::event_loop::ControlFlow::Wait;
+          *control_flow = tao::event_loop::ControlFlow::Poll;
           match event {
             tao::event::Event::WindowEvent {
               event: tao::event::WindowEvent::CloseRequested,

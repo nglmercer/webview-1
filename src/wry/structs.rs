@@ -829,7 +829,7 @@ fn setup_ipc_handler(
     let listeners = listeners_clone.lock().unwrap();
     for (idx, listener) in listeners.iter().enumerate() {
       println!("Calling listener #{}", idx);
-      let status = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::Blocking);
+      let status = listener.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
       println!("Listener #{} call returned status: {:?}", idx, status);
     }
   });

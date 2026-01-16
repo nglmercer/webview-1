@@ -240,13 +240,87 @@ impl Application {
     let _ = self.event_loop_proxy.send_event(());
   }
 
+  fn process_pending_items(&self, event_loop_target: &tao::event_loop::EventLoopWindowTarget<()>) {
+    let mut pending = self.windows_to_create.lock().unwrap();
+    for (opts, win_handle, webviews_to_create) in pending.drain(..) {
+      let mut builder = tao::window::WindowBuilder::new()
+        .with_title(opts.title.clone().unwrap_or_default())
+        .with_inner_size(tao::dpi::LogicalSize::new(
+          opts.width.unwrap_or(800.0),
+          opts.height.unwrap_or(600.0),
+        ))
+        .with_resizable(opts.resizable.unwrap_or(true))
+        .with_decorations(opts.decorations.unwrap_or(true))
+        .with_visible(opts.visible.unwrap_or(true));
+
+      if let Some(x) = opts.x {
+        if let Some(y) = opts.y {
+          builder = builder.with_position(tao::dpi::LogicalPosition::new(x, y));
+        }
+      }
+
+      if let Ok(window) = builder.build(event_loop_target) {
+        let mut handle = win_handle.lock().unwrap();
+        *handle = Some(crate::tao::structs::Window {
+          #[allow(clippy::arc_with_non_send_sync)]
+          inner: Some(Arc::new(Mutex::new(window))),
+        });
+
+        // Create pending webviews for this window
+        let mut pending_webviews = webviews_to_create.lock().unwrap();
+        for (webview_opts, webview_handle, ipc_listeners) in pending_webviews.drain(..) {
+          if let Ok(mut builder) = crate::wry::structs::WebViewBuilder::new() {
+            if let Some(url) = webview_opts.url {
+              let _ = builder.with_url(url);
+            }
+            if let Some(html) = webview_opts.html {
+              let _ = builder.with_html(html);
+            }
+            if let Some(width) = webview_opts.width {
+              let _ = builder.with_width(width as u32);
+            }
+            if let Some(height) = webview_opts.height {
+              let _ = builder.with_height(height as u32);
+            }
+            if let Some(x) = webview_opts.x {
+              let _ = builder.with_x(x as i32);
+            }
+            if let Some(y) = webview_opts.y {
+              let _ = builder.with_y(y as i32);
+            }
+            if let Some(user_agent) = webview_opts.user_agent {
+              let _ = builder.with_user_agent(user_agent);
+            }
+            // Apply preload script as initialization script
+            if let Some(preload) = webview_opts.preload {
+              let init_script = crate::wry::structs::InitializationScript {
+                js: preload,
+                once: false,
+              };
+              let _ = builder.with_initialization_script(init_script);
+            }
+            // Build the webview - pass the ipc_listeners Arc directly to setup_ipc_handler
+            if let Ok(webview) = builder.build_on_window(
+              handle.as_ref().unwrap(),
+              "webview".to_string(),
+              Some(ipc_listeners.clone()),
+            ) {
+              let mut wv_handle = webview_handle.lock().unwrap();
+              *wv_handle = Some(webview);
+            }
+          }
+        }
+      }
+    }
+  }
+
   #[napi]
   pub fn run(&mut self) {
     let event_loop = self.event_loop.lock().unwrap().take();
     if let Some(event_loop) = event_loop {
       let handler_clone = self.handler.clone();
-      let windows_to_create = self.windows_to_create.clone();
       let exit_requested = self.exit_requested.clone();
+      let app_ref = Arc::new(self.clone_internal());
 
       event_loop.run(move |event, event_loop_target, control_flow| {
         *control_flow = tao::event_loop::ControlFlow::Wait;
@@ -256,65 +330,7 @@ impl Application {
           return;
         }
 
-        // Handle pending windows
-        let mut pending = windows_to_create.lock().unwrap();
-        for (opts, win_handle, webviews_to_create) in pending.drain(..) {
-          let mut builder = tao::window::WindowBuilder::new()
-            .with_title(opts.title.clone().unwrap_or_default())
-            .with_inner_size(tao::dpi::LogicalSize::new(
-              opts.width.unwrap_or(800.0),
-              opts.height.unwrap_or(600.0),
-            ))
-            .with_resizable(opts.resizable.unwrap_or(true))
-            .with_decorations(opts.decorations.unwrap_or(true))
-            .with_visible(opts.visible.unwrap_or(true));
-
-          if let Some(x) = opts.x {
-            if let Some(y) = opts.y {
-              builder = builder.with_position(tao::dpi::LogicalPosition::new(x, y));
-            }
-          }
-
-          if let Ok(window) = builder.build(event_loop_target) {
-            let mut handle = win_handle.lock().unwrap();
-            *handle = Some(crate::tao::structs::Window {
-              #[allow(clippy::arc_with_non_send_sync)]
-              inner: Some(Arc::new(Mutex::new(window))),
-            });
-
-            // Create pending webviews for this window
-            let mut pending_webviews = webviews_to_create.lock().unwrap();
-            for (webview_opts, webview_handle, ipc_listeners) in pending_webviews.drain(..) {
-              if let Ok(mut builder) = crate::wry::structs::WebViewBuilder::new() {
-                if let Some(url) = webview_opts.url {
-                  let _ = builder.with_url(url);
-                }
-                if let Some(html) = webview_opts.html {
-                  let _ = builder.with_html(html);
-                }
-                // Apply preload script as initialization script
-                if let Some(preload) = webview_opts.preload {
-                  let init_script = crate::wry::structs::InitializationScript {
-                    js: preload,
-                    once: false,
-                  };
-                  let _ = builder.with_initialization_script(init_script);
-                }
-                // Build the webview - pass the ipc_listeners Arc directly to setup_ipc_handler
-                if let Ok(webview) = builder.build_on_window(
-                  handle.as_ref().unwrap(),
-                  "webview".to_string(),
-                  Some(ipc_listeners.clone()),
-                ) {
-                  let mut wv_handle = webview_handle.lock().unwrap();
-                  *wv_handle = Some(webview);
-                }
-              }
-            }
-            drop(pending_webviews);
-          }
-        }
-        drop(pending);
+        app_ref.process_pending_items(event_loop_target);
 
         if let tao::event::Event::WindowEvent {
           event: tao::event::WindowEvent::CloseRequested,
@@ -335,6 +351,64 @@ impl Application {
       });
     }
   }
+
+  fn clone_internal(&self) -> Self {
+    Self {
+      event_loop: self.event_loop.clone(),
+      event_loop_proxy: self.event_loop_proxy.clone(),
+      handler: self.handler.clone(),
+      windows_to_create: self.windows_to_create.clone(),
+      exit_requested: self.exit_requested.clone(),
+    }
+  }
+
+  #[napi]
+  pub fn run_iteration(&mut self) -> bool {
+    let mut keep_running = true;
+    let mut event_loop_lock = self.event_loop.lock().unwrap();
+
+    if let Some(event_loop) = event_loop_lock.as_mut() {
+      use tao::platform::run_return::EventLoopExtRunReturn;
+
+      let handler_clone = self.handler.clone();
+      let exit_requested = self.exit_requested.clone();
+      let app_ref = Arc::new(self.clone_internal());
+
+      if *exit_requested.lock().unwrap() {
+        return false;
+      }
+
+      event_loop.run_return(|event, event_loop_target, control_flow| {
+        *control_flow = tao::event_loop::ControlFlow::Poll;
+
+        app_ref.process_pending_items(event_loop_target);
+
+        match event {
+          tao::event::Event::WindowEvent {
+            event: tao::event::WindowEvent::CloseRequested,
+            ..
+          } => {
+            let mut h = handler_clone.lock().unwrap();
+            if let Some(handler) = h.as_mut() {
+              let _ = handler.call(
+                Ok(ApplicationEvent {
+                  event: WebviewApplicationEvent::WindowCloseRequested,
+                }),
+                ThreadsafeFunctionCallMode::NonBlocking,
+              );
+            }
+            keep_running = false;
+            *control_flow = tao::event_loop::ControlFlow::Exit;
+          }
+          tao::event::Event::RedrawEventsCleared => {
+            *control_flow = tao::event_loop::ControlFlow::Exit;
+          }
+          _ => {}
+        }
+      });
+    }
+    keep_running
+  }
 }
 
 #[napi]
@@ -345,6 +419,15 @@ pub struct BrowserWindow {
 
 #[napi]
 impl BrowserWindow {
+  #[napi(getter)]
+  pub fn id(&self) -> String {
+    if let Some(win) = self.inner.lock().unwrap().as_ref() {
+      format!("{:?}", win.id())
+    } else {
+      "uninitialized".to_string()
+    }
+  }
+
   #[napi]
   pub fn create_webview(&self, options: Option<WebviewOptions>) -> Result<Webview> {
     #[allow(clippy::arc_with_non_send_sync)]
@@ -612,11 +695,42 @@ pub struct Webview {
 
 #[napi]
 impl Webview {
+  #[napi(getter)]
+  pub fn id(&self) -> String {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.id().unwrap_or_default()
+    } else {
+      "uninitialized".to_string()
+    }
+  }
+
+  #[napi(getter)]
+  pub fn label(&self) -> String {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.label().unwrap_or_default()
+    } else {
+      "uninitialized".to_string()
+    }
+  }
+
   #[napi]
   pub fn on_ipc_message(&self, handler: Option<crate::wry::structs::IpcHandler>) {
     if let Some(h) = handler {
-      // Add handler to listeners list
       self.ipc_listeners.lock().unwrap().push(h);
+    }
+  }
+
+  #[napi]
+  pub fn on(&self, handler: crate::wry::structs::IpcHandler) {
+    self.ipc_listeners.lock().unwrap().push(handler);
+  }
+
+  #[napi]
+  pub fn send(&self, message: String) -> Result<()> {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.send(message)
+    } else {
+      Ok(())
     }
   }
 
@@ -644,6 +758,43 @@ impl Webview {
       webview.evaluate_script(js)
     } else {
       Ok(())
+    }
+  }
+
+  #[napi]
+  pub fn open_devtools(&self) {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      let _ = webview.open_devtools();
+    }
+  }
+
+  #[napi]
+  pub fn close_devtools(&self) {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      let _ = webview.close_devtools();
+    }
+  }
+
+  #[napi]
+  pub fn is_devtools_open(&self) -> bool {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      webview.is_devtools_open().unwrap_or(false)
+    } else {
+      false
+    }
+  }
+
+  #[napi]
+  pub fn reload(&self) {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      let _ = webview.reload();
+    }
+  }
+
+  #[napi]
+  pub fn print(&self) {
+    if let Some(webview) = self.inner.lock().unwrap().as_ref() {
+      let _ = webview.print();
     }
   }
 }
